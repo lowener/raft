@@ -41,7 +41,6 @@
 #include <raft/linalg/reduce_rows_by_key.cuh>
 #include <raft/linalg/unary_op.cuh>
 #include <raft/matrix/gather.cuh>
-#include <raft/mdarray.hpp>
 #include <raft/random/permute.cuh>
 #include <raft/random/rng.cuh>
 #include <raft/stats/sum.cuh>
@@ -153,30 +152,38 @@ void countLabels(const raft::handle_t& handle,
                                                     stream));
 }
 
-template <typename DataT>
-void checkWeight(const raft::handle_t& handle,
-                 raft::device_vector_view<DataT> weight,
-                 cudaStream_t stream)
+template <typename DataT, typename IndexT>
+void checkWeights(const raft::handle_t& handle,
+                  const DataT* weight,
+                  rmm::device_uvector<char>& workspace,
+                  IndexT n_samples)
 {
-  auto wt_aggr   = raft::make_device_scalar<DataT>(0, handle.get_stream());
-  auto n_samples = weight.extent(0);
+  auto stream = handle.get_stream();
+  rmm::device_scalar<DataT> wt_aggr(stream);
+  size_t temp_storage_bytes = 0;
 
-  raft::stats::sum(wt_aggr.data(), weight.data(), (std::size_t)1, n_samples, true, stream);
+  RAFT_CUDA_TRY(cub::DeviceReduce::Sum(
+    nullptr, temp_storage_bytes, weight, wt_aggr.data(), n_samples, stream));
+
+  workspace.resize(temp_storage_bytes, stream);
+
+  RAFT_CUDA_TRY(cub::DeviceReduce::Sum(
+    workspace.data(), temp_storage_bytes, weight, wt_aggr.data(), n_samples, stream));
 
   DataT wt_sum = 0;
   raft::copy(&wt_sum, wt_aggr.data(), 1, stream);
   handle.sync_stream(stream);
 
   if (wt_sum != n_samples) {
-    /*RAFT_LOG_INFO(
+    /*RAFT_LOG_WARN(
       "[Warning!] KMeans: normalizing the user provided sample weight to "
       "sum up to %d samples",
       n_samples);*/
 
-    auto scale = static_cast<DataT>(n_samples) / wt_sum;
+    DataT scale = static_cast<DataT>(n_samples) / wt_sum;
     raft::linalg::unaryOp(
-      weight.data(),
-      weight.data(),
+      weight,
+      weight,
       n_samples,
       [=] __device__(const DataT& wt) { return wt * scale; },
       stream);
@@ -197,20 +204,21 @@ IndexT getCentroidsBatchSize(const KMeansParams& params, IndexT n_local_clusters
   return (minVal == 0) ? n_local_clusters : minVal;
 }
 
-template <typename DataT, typename ReductionOpT>
+template <typename DataT, typename IndexT, typename ReductionOpT>
 void computeClusterCost(const raft::handle_t& handle,
-                        raft::device_vector_view<DataT> minClusterDistance,
+                        DataT* minClusterDistance,
+                        IndexT n_samples,
                         rmm::device_uvector<char>& workspace,
                         DataT* clusterCost,
-                        ReductionOpT reduction_op,
-                        cudaStream_t stream)
+                        ReductionOpT reduction_op)
 {
+  auto stream = handle.get_stream();
   size_t temp_storage_bytes = 0;
   RAFT_CUDA_TRY(cub::DeviceReduce::Reduce(nullptr,
                                           temp_storage_bytes,
-                                          minClusterDistance.data(),
+                                          minClusterDistance,
                                           clusterCost,
-                                          minClusterDistance.size(),
+                                          n_samples,
                                           reduction_op,
                                           DataT(),
                                           stream));
@@ -219,9 +227,9 @@ void computeClusterCost(const raft::handle_t& handle,
 
   RAFT_CUDA_TRY(cub::DeviceReduce::Reduce(workspace.data(),
                                           temp_storage_bytes,
-                                          minClusterDistance.data(),
+                                          minClusterDistance,
                                           clusterCost,
-                                          minClusterDistance.size(),
+                                          n_samples,
                                           reduction_op,
                                           DataT(),
                                           stream));
@@ -229,20 +237,18 @@ void computeClusterCost(const raft::handle_t& handle,
 
 template <typename DataT, typename IndexT>
 raft::device_matrix<DataT> sampleCentroids(const raft::handle_t& handle,
-                                           raft::device_matrix_view<const DataT> X,
-                                           raft::device_vector_view<DataT> minClusterDistance,
-                                           raft::device_vector_view<IndexT> isSampleCentroid,
+                                           const DataT* X,
+                                           IndexT n_local_samples,
+                                           IndexT n_features,
+                                           DataT* minClusterDistance,
+                                           IndexT* isSampleCentroid,
                                            SamplingOp<DataT, IndexT>& select_op,
-                                           rmm::device_uvector<char>& workspace,
-                                           cudaStream_t stream)
+                                           rmm::device_uvector<char>& workspace)
 {
-  auto n_local_samples = X.extent(0);
-  auto n_features      = X.extent(1);
-
-  auto nSelected = raft::make_device_scalar<IndexT>(0, stream);
-  cub::ArgIndexInputIterator<DataT*> ip_itr(minClusterDistance.data());
-  auto sampledMinClusterDistance =
-    raft::make_device_vector<cub::KeyValuePair<ptrdiff_t, DataT>>(n_local_samples, stream);
+  auto stream = handle.get_stream();
+  rmm::device_scalar<IndexT> nSelected(stream);
+  cub::ArgIndexInputIterator<DataT*> ip_itr(minClusterDistance);
+  rmm::device_uvector<cub::KeyValuePair<ptrdiff_t, DataT>> sampledMinClusterDistance(n_local_samples, stream);
   size_t temp_storage_bytes = 0;
   RAFT_CUDA_TRY(cub::DeviceSelect::If(nullptr,
                                       temp_storage_bytes,
@@ -268,19 +274,18 @@ raft::device_matrix<DataT> sampleCentroids(const raft::handle_t& handle,
   raft::copy(&nPtsSampledInRank, nSelected.data(), 1, stream);
   handle.sync_stream(stream);
 
-  IndexT* rawPtr_isSampleCentroid = isSampleCentroid.data();
   thrust::for_each_n(handle.get_thrust_policy(),
                      sampledMinClusterDistance.data(),
                      nPtsSampledInRank,
                      [=] __device__(cub::KeyValuePair<ptrdiff_t, DataT> val) {
-                       rawPtr_isSampleCentroid[val.key] = 1;
+                      isSampleCentroid[val.key] = 1;
                      });
 
   auto inRankCp = raft::make_device_matrix<DataT>(nPtsSampledInRank, n_features, stream);
 
-  raft::matrix::gather((DataT*)X.data(),
-                       X.extent(1),
-                       X.extent(0),
+  raft::matrix::gather((DataT*)X,
+                       n_features,
+                       n_local_samples,
                        sampledMinClusterDistance.data(),
                        nPtsSampledInRank,
                        inRankCp.data(),
@@ -301,19 +306,14 @@ void pairwise_distance_kmeans(const raft::handle_t& handle,
                               raft::device_matrix_view<DataT> pairwiseDistance,
                               rmm::device_uvector<char>& workspace,
                               raft::distance::DistanceType metric,
-                              cudaStream_t stream)
+                              IndexT n_samples,
+                              IndexT n_features,
+                              IndexT n_clusters)
 {
-  auto n_samples  = X.extent(0);
-  auto n_features = X.extent(1);
-  auto n_clusters = centroids.extent(0);
-
-  ASSERT(X.extent(1) == centroids.extent(1),
-         "# features in dataset and centroids are different (must be same)");
-
   raft::distance::pairwise_distance<DataT, IndexT>(handle,
-                                                   X.data(),
-                                                   centroids.data(),
-                                                   pairwiseDistance.data(),
+                                                   X,
+                                                   centroids,
+                                                   pairwiseDistance,
                                                    n_samples,
                                                    n_clusters,
                                                    n_features,
@@ -325,22 +325,21 @@ void pairwise_distance_kmeans(const raft::handle_t& handle,
 // in 'out' does not modify the input
 template <typename DataT, typename IndexT>
 void shuffleAndGather(const raft::handle_t& handle,
-                      raft::device_matrix_view<const DataT> in,
-                      raft::device_matrix_view<DataT> out,
+                      const DataT* in,
+                      DataT* out,
+                      IndexT n_samples,
+                      IndexT n_features,
                       uint32_t n_samples_to_gather,
                       uint64_t seed,
-                      cudaStream_t stream,
                       rmm::device_uvector<char>* workspace = nullptr)
 {
-  auto n_samples  = in.extent(0);
-  auto n_features = in.extent(1);
-
-  auto indices = raft::make_device_vector<IndexT>(n_samples, stream);
+  auto stream  = handle.get_stream();
+  auto indices = rmm::device_vector<IndexT>(n_samples, stream);
 
   if (workspace) {
     // shuffle indices on device using ml-prims
     raft::random::permute<DataT>(
-      indices.data(), nullptr, nullptr, (IndexT)in.extent(1), (IndexT)in.extent(0), true, stream);
+      indices.data(), nullptr, nullptr, n_features, n_samples, true, stream);
   } else {
     // shuffle indices on host and copy to device...
     std::vector<IndexT> ht_indices(n_samples);
@@ -353,12 +352,12 @@ void shuffleAndGather(const raft::handle_t& handle,
     raft::copy(indices.data(), ht_indices.data(), indices.size(), stream);
   }
 
-  raft::matrix::gather((DataT*)in.data(),
-                       in.extent(1),
-                       in.extent(0),
+  raft::matrix::gather((DataT*)in,
+                       n_features,
+                       n_samples,
                        indices.data(),
                        n_samples_to_gather,
-                       out.data(),
+                       out,
                        stream);
 }
 
@@ -369,18 +368,18 @@ template <typename DataT, typename IndexT>
 void minClusterAndDistanceCompute(
   const raft::handle_t& handle,
   const KMeansParams& params,
-  raft::device_matrix_view<const DataT> X,
-  raft::device_matrix_view<const DataT> centroids,
-  raft::device_vector_view<cub::KeyValuePair<IndexT, DataT>> minClusterAndDistance,
-  raft::device_vector_view<DataT> L2NormX,
+  const DataT* X,
+  const DataT* centroids,
+  IndexT n_samples,
+  IndexT n_features,
+  IndexT n_clusters,
+  cub::KeyValuePair<IndexT, DataT>* minClusterAndDistance,
+  DataT* L2NormX,
   rmm::device_uvector<DataT>& L2NormBuf_OR_DistBuf,
   rmm::device_uvector<char>& workspace,
-  raft::distance::DistanceType metric,
-  cudaStream_t stream)
+  raft::distance::DistanceType metric)
 {
-  auto n_samples          = X.extent(0);
-  auto n_features         = X.extent(1);
-  auto n_clusters         = centroids.extent(0);
+  auto stream = handle.get_stream();
   auto dataBatchSize      = getDataBatchSize(params, n_samples);
   auto centroidsBatchSize = getCentroidsBatchSize(params, n_clusters);
 
@@ -388,9 +387,9 @@ void minClusterAndDistanceCompute(
       metric == raft::distance::DistanceType::L2SqrtExpanded) {
     L2NormBuf_OR_DistBuf.resize(n_clusters, stream);
     raft::linalg::rowNorm(L2NormBuf_OR_DistBuf.data(),
-                          centroids.data(),
-                          centroids.extent(1),
-                          centroids.extent(0),
+                          centroids,
+                          n_features,
+                          n_clusters,
                           raft::linalg::L2Norm,
                           true,
                           stream);
@@ -399,11 +398,10 @@ void minClusterAndDistanceCompute(
   }
 
   // Note - pairwiseDistance and centroidsNorm share the same buffer
-  // centroidsNorm [n_clusters] - tensor wrapper around centroids L2 Norm
-  auto centroidsNorm = raft::make_device_vector_view(L2NormBuf_OR_DistBuf.data(), n_clusters);
-  // pairwiseDistance[ns x nc] - tensor wrapper around the distance buffer
-  auto pairwiseDistance =
-    raft::make_device_matrix_view(L2NormBuf_OR_DistBuf.data(), dataBatchSize, centroidsBatchSize);
+  // centroidsNorm [n_clusters] - wrapper around centroids L2 Norm
+  auto centroidsNorm = L2NormBuf_OR_DistBuf.data();
+  // pairwiseDistance[dataBatchSize x centroidsBatchSize] - wrapper around the distance buffer
+  auto pairwiseDistance = L2NormBuf_OR_DistBuf.data();
 
   cub::KeyValuePair<IndexT, DataT> initial_value(0, std::numeric_limits<DataT>::max());
 

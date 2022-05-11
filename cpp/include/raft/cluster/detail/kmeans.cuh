@@ -449,7 +449,8 @@ void kmeans_fit_main(const raft::handle_t& handle,
       // calculate cluster cost phi_x(C)
       computeClusterCost(
         handle,
-        minClusterAndDistance.view(),
+        minClusterAndDistance.data(),
+        n_samples,
         workspace,
         clusterCostD.data(),
         [] __device__(const cub::KeyValuePair<IndexT, DataT>& a,
@@ -458,8 +459,7 @@ void kmeans_fit_main(const raft::handle_t& handle,
           res.key   = 0;
           res.value = a.value + b.value;
           return res;
-        },
-        stream);
+        });
 
       DataT curClusteringCost = 0;
       raft::copy(&curClusteringCost, &(clusterCostD.data()->value), 1, stream);
@@ -513,7 +513,8 @@ void kmeans_fit_main(const raft::handle_t& handle,
   // calculate cluster cost phi_x(C)
   computeClusterCost(
     handle,
-    minClusterAndDistance.view(),
+    minClusterAndDistance.data(),
+    n_samples,
     workspace,
     clusterCostD.data(),
     [] __device__(const cub::KeyValuePair<IndexT, DataT>& a,
@@ -522,8 +523,7 @@ void kmeans_fit_main(const raft::handle_t& handle,
       res.key   = 0;
       res.value = a.value + b.value;
       return res;
-    },
-    stream);
+    });
 
   raft::copy(&inertia, &(clusterCostD.data()->value), 1, stream);
 
@@ -625,11 +625,11 @@ void initScalableKMeansPlusPlus(const raft::handle_t& handle,
   // compute partial cluster cost from the samples in rank
   computeClusterCost(
     handle,
-    minClusterDistanceVec.view(),
+    minClusterDistanceVec.data(),
+    n_samples,
     workspace,
     clusterCost.data(),
-    [] __device__(const DataT& a, const DataT& b) { return a + b; },
-    stream);
+    [] __device__(const DataT& a, const DataT& b) { return a + b; });
 
   auto psi = clusterCost.value(stream);
 
@@ -660,11 +660,11 @@ void initScalableKMeansPlusPlus(const raft::handle_t& handle,
 
     computeClusterCost(
       handle,
-      minClusterDistanceVec.view(),
+      minClusterDistanceVec.data(),
+      n_samples,
       workspace,
       clusterCost.data(),
-      [] __device__(const DataT& a, const DataT& b) { return a + b; },
-      stream);
+      [] __device__(const DataT& a, const DataT& b) { return a + b; });
 
     psi = clusterCost.value(stream);
 
@@ -677,6 +677,8 @@ void initScalableKMeansPlusPlus(const raft::handle_t& handle,
 
     auto Cp = sampleCentroids<DataT, IndexT>(handle,
                                              X,
+                                             n_samples,
+                                             n_features,
                                              minClusterDistanceVec.view(),
                                              isSampleCentroid.view(),
                                              select_op,
@@ -828,7 +830,7 @@ void kmeans_fit(handle_t const& handle,
     thrust::fill(handle.get_thrust_policy(), weight.data(), weight.data() + weight.size(), 1);
 
   // check if weights sum up to n_samples
-  checkWeight<DataT>(handle, weight.view(), stream);
+  checkWeights<DataT>(handle, weight, workspace, n_samples);
 
   rmm::device_uvector<DataT> centroidsRawData(0, stream);
 
@@ -949,7 +951,7 @@ void kmeans_predict(handle_t const& handle,
   rmm::device_uvector<IndexT> labelsRawData(0, stream);
 
   // check if weights sum up to n_samples
-  if (normalize_weight) checkWeight(handle, weight.view(), stream);
+  if (normalize_weight) checkWeights(handle, weight, workspace, n_samples);
 
   auto minClusterAndDistance =
     raft::make_device_vector<cub::KeyValuePair<IndexT, DataT>>(n_samples, stream);
@@ -995,7 +997,8 @@ void kmeans_predict(handle_t const& handle,
 
   computeClusterCost(
     handle,
-    minClusterAndDistance.view(),
+    minClusterAndDistance.data(),
+    n_samples,
     workspace,
     clusterCostD.data(),
     [] __device__(const cub::KeyValuePair<IndexT, DataT>& a,
@@ -1004,8 +1007,7 @@ void kmeans_predict(handle_t const& handle,
       res.key   = 0;
       res.value = a.value + b.value;
       return res;
-    },
-    stream);
+    });
 
   raft::copy(&inertia, &(clusterCostD.data()->value), 1, stream);
 
