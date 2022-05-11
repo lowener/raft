@@ -47,7 +47,8 @@ struct KMeansParams {
   int verbosity = 4;  // RAFT_LEVEL_INFO;
 
   // Seed to the random number generator.
-  raft::random::RngState seed = raft::random::RngState(0);
+  // raft::random::RngState seed = raft::random::RngState(0);
+  uint64_t seed = 0;
 
   // Metric to use for distance computation. Any metric from
   // raft::distance::DistanceType can be used
