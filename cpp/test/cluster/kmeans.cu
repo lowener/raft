@@ -65,8 +65,8 @@ class KmeansTest : public ::testing::TestWithParam<KmeansInputs<T>> {
     params.oversampling_factor = 0;
 
     auto stream = handle.get_stream();
-    auto X      = raft::make_device_matrix<T>(n_samples, n_features, stream);
-    auto labels = raft::make_device_vector<int>(n_samples, stream);
+    auto X      = rmm::device_uvector<T>(n_samples * n_features, stream);
+    auto labels = rmm::device_uvector<int>(n_samples, stream);
 
     raft::random::make_blobs<T, int>(X.data(),
                                      labels.data(),
@@ -87,17 +87,12 @@ class KmeansTest : public ::testing::TestWithParam<KmeansInputs<T>> {
     d_labels_ref.resize(n_samples, stream);
     d_centroids.resize(params.n_clusters * n_features, stream);
 
-    std::optional<raft::device_vector_view<const T>> d_sw = std::nullopt;
-    auto d_centroids_view =
-      raft::make_device_matrix_view<T>(d_centroids.data(), params.n_clusters, n_features);
+    T* d_sample_weight_ptr = nullptr;
     if (testparams.weighted) {
       d_sample_weight.resize(n_samples, stream);
-      d_sw = std::make_optional(
-        raft::make_device_vector_view<const T>(d_sample_weight.data(), n_samples));
-      thrust::fill(thrust::cuda::par.on(stream),
-                   d_sample_weight.data(),
-                   d_sample_weight.data() + n_samples,
-                   1);
+      d_sample_weight_ptr = d_sample_weight.data();
+      thrust::fill(
+        thrust::cuda::par.on(stream), d_sample_weight_ptr, d_sample_weight_ptr + n_samples, 1);
     }
 
     raft::copy(d_labels_ref.data(), labels.data(), n_samples, stream);
@@ -105,15 +100,16 @@ class KmeansTest : public ::testing::TestWithParam<KmeansInputs<T>> {
 
     T inertia   = 0;
     int n_iter  = 0;
-    auto X_view = (raft::device_matrix_view<const T>)X.view();
 
     raft::cluster::kmeans_fit_predict<T, int>(
       handle,
       params,
-      X_view,
-      d_sw,
-      d_centroids_view,
-      raft::make_device_vector_view<int>(d_labels.data(), n_samples),
+      X.data(),
+      d_sample_weight_ptr,
+      d_centroids.data(),
+      n_samples,
+      n_features,
+      d_labels.data(),
       inertia,
       n_iter);
 

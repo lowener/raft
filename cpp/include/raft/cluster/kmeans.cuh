@@ -46,14 +46,14 @@ template <typename DataT, typename IndexT = int>
 void kmeans_fit(handle_t const& handle,
                 const KMeansParams& params,
                 const DataT* X,
+                const DataT* sample_weight,
+                DataT* centroids,
                 IndexT n_samples,
                 IndexT n_features,
-                std::optional<const DataT*> sample_weight,
-                DataT* centroids,
                 DataT& inertia,
                 IndexT& n_iter)
 {
-  detail::kmeans_fit<DataT, IndexT>(handle, params, X, sample_weight, centroids, inertia, n_iter);
+  detail::kmeans_fit<DataT, IndexT>(handle, params, X, sample_weight, centroids, n_samples, n_features, inertia, n_iter);
 }
 
 /**
@@ -76,16 +76,16 @@ template <typename DataT, typename IndexT = int>
 void kmeans_predict(handle_t const& handle,
                     const KMeansParams& params,
                     const DataT* X,
+                    const DataT* sample_weight,
+                    const DataT* centroids,
                     IndexT n_samples,
                     IndexT n_features,
-                    std::optional<const DataT*> sample_weight,
-                    const DataT* centroids,
                     IndexT* labels,
                     bool normalize_weight,
                     DataT& inertia)
 {
   detail::kmeans_predict<DataT, IndexT>(
-    handle, params, X, sample_weight, centroids, labels, normalize_weight, inertia);
+    handle, params, X, sample_weight, centroids, n_samples, n_features, labels, normalize_weight, inertia);
 }
 
 /**
@@ -112,16 +112,16 @@ template <typename DataT, typename IndexT = int>
 void kmeans_fit_predict(handle_t const& handle,
                         const KMeansParams& params,
                         const DataT* X,
+                        const DataT* sample_weight,
+                        DataT* centroids,
                         IndexT n_samples,
                         IndexT n_features,
-                        std::optional<const DataT*> sample_weight,
-                        DataT* centroids,
                         IndexT* labels,
                         DataT& inertia,
                         IndexT& n_iter)
 {
-  kmeans_fit<DataT, IndexT>(handle, params, X, sample_weight, centroids, inertia, n_iter);
-  kmeans_predict<DataT, IndexT>(handle, params, X, sample_weight, centroids, labels, true, inertia);
+  kmeans_fit<DataT, IndexT>(handle, params, X, sample_weight, centroids, n_samples, n_features, inertia, n_iter);
+  kmeans_predict<DataT, IndexT>(handle, params, X, sample_weight, centroids, n_samples, n_features, labels, true, inertia);
 }
 
 /**
@@ -139,12 +139,12 @@ template <typename DataT, typename IndexT = int>
 void kmeans_transform(const raft::handle_t& handle,
                       const KMeansParams& params,
                       const DataT* X,
+                      const DataT* centroids,
                       IndexT n_samples,
                       IndexT n_features,
-                      const DataT* centroids,
                       DataT* X_new)
 {
-  detail::kmeans_transform<DataT, IndexT>(handle, params, X, centroids, X_new);
+  detail::kmeans_transform<DataT, IndexT>(handle, params, X, centroids, n_samples, n_features, X_new);
 }
 }  // namespace cluster
 }  // namespace raft

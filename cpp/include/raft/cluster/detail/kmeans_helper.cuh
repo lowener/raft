@@ -123,7 +123,7 @@ void countLabels(const raft::handle_t& handle,
                  IndexT n_clusters,
                  rmm::device_uvector<char>& workspace)
 {
-  auto stream        = handle.get_stream();
+  cudaStream_t stream        = handle.get_stream();
   IndexT num_levels  = n_clusters + 1;
   IndexT lower_level = 0;
   IndexT upper_level = n_clusters;
@@ -154,11 +154,11 @@ void countLabels(const raft::handle_t& handle,
 
 template <typename DataT, typename IndexT>
 void checkWeights(const raft::handle_t& handle,
-                  const DataT* weight,
+                  DataT* weight,
                   rmm::device_uvector<char>& workspace,
                   IndexT n_samples)
 {
-  auto stream = handle.get_stream();
+  cudaStream_t stream = handle.get_stream();
   rmm::device_scalar<DataT> wt_aggr(stream);
   size_t temp_storage_bytes = 0;
 
@@ -212,7 +212,7 @@ void computeClusterCost(const raft::handle_t& handle,
                         DataT* clusterCost,
                         ReductionOpT reduction_op)
 {
-  auto stream = handle.get_stream();
+  cudaStream_t stream = handle.get_stream();
   size_t temp_storage_bytes = 0;
   RAFT_CUDA_TRY(cub::DeviceReduce::Reduce(nullptr,
                                           temp_storage_bytes,
@@ -246,7 +246,7 @@ void sampleCentroids(const raft::handle_t& handle,
                                            rmm::device_uvector<char>& workspace,
                                            rmm::device_uvector<DataT>& inRankCp)
 {
-  auto stream = handle.get_stream();
+  cudaStream_t stream = handle.get_stream();
   rmm::device_scalar<IndexT> nSelected(stream);
   cub::ArgIndexInputIterator<DataT*> ip_itr(minClusterDistance);
   rmm::device_uvector<cub::KeyValuePair<ptrdiff_t, DataT>> sampledMinClusterDistance(n_local_samples, stream);
@@ -294,8 +294,6 @@ void sampleCentroids(const raft::handle_t& handle,
                          return val.key;
                        },
                        stream);
-
-  return inRankCp;
 }
 
 // shuffle and randomly select 'n_samples_to_gather' from input 'in' and stores
@@ -310,7 +308,7 @@ void shuffleAndGather(const raft::handle_t& handle,
                       uint64_t seed,
                       rmm::device_uvector<char>* workspace = nullptr)
 {
-  auto stream  = handle.get_stream();
+  cudaStream_t stream  = handle.get_stream();
   rmm::device_uvector<IndexT> indices(n_samples, stream);
 
   if (workspace) {
@@ -356,7 +354,7 @@ void minClusterAndDistanceCompute(
   rmm::device_uvector<char>& workspace,
   raft::distance::DistanceType metric)
 {
-  auto stream             = handle.get_stream();
+  cudaStream_t stream             = handle.get_stream();
   auto dataBatchSize      = getDataBatchSize(params, n_samples);
   auto centroidsBatchSize = getCentroidsBatchSize(params, n_clusters);
 
@@ -376,9 +374,9 @@ void minClusterAndDistanceCompute(
 
   // Note - pairwiseDistance and centroidsNorm share the same buffer
   // centroidsNorm [n_clusters] - wrapper around centroids L2 Norm
-  auto centroidsNorm = L2NormBuf_OR_DistBuf.data();
+  auto* centroidsNorm = L2NormBuf_OR_DistBuf.data();
   // pairwiseDistance[dataBatchSize x centroidsBatchSize] - wrapper around the distance buffer
-  auto pairwiseDistance = L2NormBuf_OR_DistBuf.data();
+  auto* pairwiseDistance = L2NormBuf_OR_DistBuf.data();
 
   cub::KeyValuePair<IndexT, DataT> initial_value(0, std::numeric_limits<DataT>::max());
 
@@ -388,13 +386,13 @@ void minClusterAndDistanceCompute(
                initial_value);
 
   // tile over the input dataset
-  for (std::size_t dIdx = 0; dIdx < n_samples; dIdx += dataBatchSize) {
+  for (IndexT dIdx = 0; dIdx < n_samples; dIdx += dataBatchSize) {
     // # of samples for the current batch
     auto ns = std::min(dataBatchSize, n_samples - dIdx);
 
     // datasetView [ns x n_features] - view representing the current batch of
     // input dataset
-    const auto* datasetView = X + (dIdx * n_features);
+    auto* datasetView = X + (dIdx * n_features);
 
     // minClusterAndDistanceView [ns x n_clusters]
     auto* minClusterAndDistanceView = minClusterAndDistance + dIdx;
@@ -403,18 +401,18 @@ void minClusterAndDistanceCompute(
     auto* L2NormXView = L2NormX + dIdx;
 
     // tile over the centroids
-    for (std::size_t cIdx = 0; cIdx < n_clusters; cIdx += centroidsBatchSize) {
+    for (IndexT cIdx = 0; cIdx < n_clusters; cIdx += centroidsBatchSize) {
       // # of centroids for the current batch
       auto nc = std::min(centroidsBatchSize, n_clusters - cIdx);
 
       // centroidsView [nc x n_features] - view representing the current batch
       // of centroids
-      auto centroidsView = centroids + (cIdx * n_features);
+      auto* centroidsView = centroids + (cIdx * n_features);
 
       if (metric == raft::distance::DistanceType::L2Expanded ||
           metric == raft::distance::DistanceType::L2SqrtExpanded) {
         // centroidsNormView [nc]
-        const auto* centroidsNormView = centroidsNorm.data() + cIdx;
+        auto* centroidsNormView = centroidsNorm + cIdx;
         workspace.resize((sizeof(IndexT)) * ns, stream);
 
         FusedL2NNReduceOp<IndexT, DataT> redOp(cIdx);
@@ -485,7 +483,7 @@ void minClusterDistanceCompute(const raft::handle_t& handle,
                                rmm::device_uvector<char>& workspace,
                                raft::distance::DistanceType metric)
 {
-  auto stream             = handle.get_stream();
+  cudaStream_t stream             = handle.get_stream();
   auto dataBatchSize      = getDataBatchSize(params, n_samples);
   auto centroidsBatchSize = getCentroidsBatchSize(params, n_clusters);
 
@@ -516,13 +514,13 @@ void minClusterDistanceCompute(const raft::handle_t& handle,
 
   // tile over the input data and calculate distance matrix [n_samples x
   // n_clusters]
-  for (std::size_t dIdx = 0; dIdx < n_samples; dIdx += dataBatchSize) {
+  for (IndexT dIdx = 0; dIdx < n_samples; dIdx += dataBatchSize) {
     // # of samples for the current batch
     auto ns = std::min(dataBatchSize, n_samples - dIdx);
 
     // datasetView [ns x n_features] - view representing the current batch of
     // input dataset
-    const auto* datasetView = X + dIdx * n_features;
+    auto* datasetView = X + dIdx * n_features;
 
     // minClusterDistanceView [ns x n_clusters]
     auto* minClusterDistanceView = minClusterDistance + dIdx;
@@ -531,7 +529,7 @@ void minClusterDistanceCompute(const raft::handle_t& handle,
     auto* L2NormXView = L2NormX + dIdx;
 
     // tile over the centroids
-    for (std::size_t cIdx = 0; cIdx < n_clusters; cIdx += centroidsBatchSize) {
+    for (IndexT cIdx = 0; cIdx < n_clusters; cIdx += centroidsBatchSize) {
       // # of centroids for the current batch
       auto nc = std::min(centroidsBatchSize, n_clusters - cIdx);
 
@@ -607,7 +605,7 @@ void countSamplesInCluster(const raft::handle_t& handle,
                            raft::distance::DistanceType metric,
                            DataT* sampleCountInCluster)
 {
-  auto stream = handle.get_stream();
+  cudaStream_t stream = handle.get_stream();
 
   // stores (key, value) pair corresponding to each sample where
   //   - key is the index of nearest cluster
