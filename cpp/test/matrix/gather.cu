@@ -56,7 +56,7 @@ void gatherLaunch(MatrixIteratorT in,
                   cudaStream_t stream)
 {
   typedef typename std::iterator_traits<MapIteratorT>::value_type MapValueT;
-  matrix::gather(in, D, N, map, map_length, out, stream);
+  sparse::matrix::gather(in, D, N, map, map_length, out, stream);
 }
 
 struct GatherInputs {
