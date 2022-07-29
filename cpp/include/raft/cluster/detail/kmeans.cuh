@@ -540,8 +540,8 @@ void kmeans_fit_main(const raft::handle_t& handle,
 template <typename DataT, typename IndexT>
 void initScalableKMeansPlusPlus(const raft::handle_t& handle,
                                 const KMeansParams& params,
-                                const raft::device_matrix_view<const DataT, IndexT> X,
-                                const raft::device_matrix_view<DataT, IndexT> centroidsRawData,
+                                const raft::device_matrix_view<const DataT, IndexT>& X,
+                                const raft::device_matrix_view<DataT, IndexT>& centroidsRawData,
                                 rmm::device_uvector<char>& workspace)
 {
   cudaStream_t stream = handle.get_stream();
@@ -776,11 +776,11 @@ void initScalableKMeansPlusPlus(const raft::handle_t& handle,
 template <typename DataT, typename IndexT>
 void kmeans_fit(handle_t const& handle,
                 const KMeansParams& params,
-                raft::device_matrix_view<const DataT> X,
-                std::optional<raft::device_vector_view<const DataT>> sample_weight,
-                raft::device_matrix_view<DataT> centroids,
-                raft::host_scalar_view<DataT> inertia,
-                raft::host_scalar_view<IndexT> n_iter)
+                const raft::device_matrix_view<const DataT, IndexT>& X,
+                const std::optional<raft::device_vector_view<const DataT, IndexT>>& sample_weight,
+                const raft::device_matrix_view<DataT, IndexT>& centroids,
+                const raft::host_scalar_view<DataT>& inertia,
+                const raft::host_scalar_view<IndexT>& n_iter)
 {
   auto n_samples      = X.extent(0);
   auto n_features     = X.extent(1);
@@ -802,7 +802,7 @@ void kmeans_fit(handle_t const& handle,
 
   // Allocate memory
   rmm::device_uvector<char> workspace(0, stream);
-  auto weight = raft::make_device_vector<DataT>(handle, n_samples);
+  auto weight = raft::make_device_vector<DataT, IndexT>(handle, n_samples);
   if (sample_weight.has_value())
     raft::copy(weight.data_handle(), sample_weight.value().data_handle(), n_samples, stream);
   else
@@ -904,7 +904,7 @@ void kmeans_fit(handle_t const& handle,
   auto XView = raft::make_device_matrix_view<const DataT, IndexT>(X, n_samples, n_features);
   auto centroidsView =
     raft::make_device_matrix_view<DataT, IndexT>(centroids, params.n_clusters, n_features);
-  std::optional<raft::device_vector_view<const DataT>> sample_weightView = std::nullopt;
+  std::optional<raft::device_vector_view<const DataT, IndexT>> sample_weightView = std::nullopt;
   if (sample_weight)
     sample_weightView =
       raft::make_device_vector_view<const DataT, IndexT>(sample_weight, n_samples);
@@ -918,12 +918,12 @@ void kmeans_fit(handle_t const& handle,
 template <typename DataT, typename IndexT>
 void kmeans_predict(handle_t const& handle,
                     const KMeansParams& params,
-                    raft::device_matrix_view<const DataT> X,
-                    std::optional<raft::device_vector_view<const DataT>> sample_weight,
-                    raft::device_matrix_view<const DataT> centroids,
-                    raft::device_vector_view<IndexT> labels,
+                    const raft::device_matrix_view<const DataT, IndexT>& X,
+                    const std::optional<raft::device_vector_view<const DataT, IndexT>>& sample_weight,
+                    const raft::device_matrix_view<const DataT, IndexT>& centroids,
+                    const raft::device_vector_view<IndexT, IndexT>& labels,
                     bool normalize_weight,
-                    raft::host_scalar_view<DataT> inertia)
+                    const raft::host_scalar_view<DataT>& inertia)
 {
   auto n_samples      = X.extent(0);
   auto n_features     = X.extent(1);
@@ -1058,12 +1058,12 @@ void kmeans_predict(handle_t const& handle,
 template <typename DataT, typename IndexT = int>
 void kmeans_fit_predict(handle_t const& handle,
                         const KMeansParams& params,
-                        raft::device_matrix_view<const DataT> X,
-                        std::optional<raft::device_vector_view<const DataT>> sample_weight,
-                        std::optional<raft::device_matrix_view<DataT>> centroids,
-                        raft::device_vector_view<IndexT> labels,
-                        raft::host_scalar_view<DataT> inertia,
-                        raft::host_scalar_view<IndexT> n_iter)
+                        const raft::device_matrix_view<const DataT, IndexT>& X,
+                        const std::optional<raft::device_vector_view<const DataT, IndexT>>& sample_weight,
+                        const std::optional<raft::device_matrix_view<DataT, IndexT>>& centroids,
+                        const raft::device_vector_view<IndexT, IndexT>& labels,
+                        const raft::host_scalar_view<DataT>& inertia,
+                        const raft::host_scalar_view<IndexT>& n_iter)
 {
   if (!centroids.has_value()) {
     auto n_features = X.extent(1);
@@ -1124,9 +1124,9 @@ void kmeans_fit_predict(handle_t const& handle,
 template <typename DataT, typename IndexT = int>
 void kmeans_transform(const raft::handle_t& handle,
                       const KMeansParams& params,
-                      raft::device_matrix_view<const DataT> X,
-                      raft::device_matrix_view<const DataT> centroids,
-                      raft::device_matrix_view<DataT> X_new)
+                      const raft::device_matrix_view<const DataT, IndexT>& X,
+                      const raft::device_matrix_view<const DataT, IndexT>& centroids,
+                      const raft::device_matrix_view<DataT, IndexT>& X_new)
 {
   logger::get(RAFT_NAME).set_level(params.verbosity);
   cudaStream_t stream = handle.get_stream();

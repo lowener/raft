@@ -50,11 +50,11 @@ namespace cluster {
 template <typename DataT, typename IndexT = int>
 void kmeans_fit(handle_t const& handle,
                 const KMeansParams& params,
-                raft::device_matrix_view<const DataT, IndexT> X,
-                std::optional<raft::device_vector_view<const DataT, IndexT>> sample_weight,
-                raft::device_matrix_view<DataT, IndexT> centroids,
-                raft::host_scalar_view<DataT> inertia,
-                raft::host_scalar_view<IndexT> n_iter)
+                const raft::device_matrix_view<const DataT, IndexT>& X,
+                const std::optional<raft::device_vector_view<const DataT, IndexT>>& sample_weight,
+                const raft::device_matrix_view<DataT, IndexT>& centroids,
+                const raft::host_scalar_view<DataT>& inertia,
+                const raft::host_scalar_view<IndexT>& n_iter)
 {
   detail::kmeans_fit<DataT, IndexT>(handle, params, X, sample_weight, centroids, inertia, n_iter);
 }
@@ -97,12 +97,12 @@ void kmeans_fit(handle_t const& handle,
 template <typename DataT, typename IndexT = int>
 void kmeans_predict(handle_t const& handle,
                     const KMeansParams& params,
-                    raft::device_matrix_view<const DataT, IndexT> X,
-                    std::optional<raft::device_vector_view<const DataT, IndexT>> sample_weight,
-                    raft::device_matrix_view<const DataT, IndexT> centroids,
-                    raft::device_vector_view<IndexT, IndexT> labels,
+                    const raft::device_matrix_view<const DataT, IndexT>& X,
+                    const std::optional<raft::device_vector_view<const DataT, IndexT>>& sample_weight,
+                    const raft::device_matrix_view<const DataT, IndexT>& centroids,
+                    const raft::device_vector_view<IndexT, IndexT>& labels,
                     bool normalize_weight,
-                    raft::host_scalar_view<DataT> inertia)
+                    const raft::host_scalar_view<DataT>& inertia)
 {
   detail::kmeans_predict<DataT, IndexT>(
     handle, params, X, sample_weight, centroids, labels, normalize_weight, inertia);
@@ -162,12 +162,12 @@ void kmeans_predict(handle_t const& handle,
 template <typename DataT, typename IndexT = int>
 void kmeans_fit_predict(handle_t const& handle,
                         const KMeansParams& params,
-                        raft::device_matrix_view<const DataT, IndexT> X,
-                        std::optional<raft::device_vector_view<const DataT, IndexT>> sample_weight,
-                        std::optional<raft::device_matrix_view<DataT, IndexT>> centroids,
-                        raft::device_vector_view<IndexT, IndexT> labels,
-                        raft::host_scalar_view<DataT> inertia,
-                        raft::host_scalar_view<IndexT> n_iter)
+                        const raft::device_matrix_view<const DataT, IndexT>& X,
+                        const std::optional<raft::device_vector_view<const DataT, IndexT>>& sample_weight,
+                        const std::optional<raft::device_matrix_view<DataT, IndexT>>& centroids,
+                        const raft::device_vector_view<IndexT, IndexT>& labels,
+                        const raft::host_scalar_view<DataT>& inertia,
+                        const raft::host_scalar_view<IndexT>& n_iter)
 {
   detail::kmeans_fit_predict<DataT, IndexT>(
     handle, params, X, sample_weight, centroids, labels, inertia, n_iter);
@@ -207,9 +207,9 @@ void kmeans_fit_predict(handle_t const& handle,
 template <typename DataT, typename IndexT = int>
 void kmeans_transform(const raft::handle_t& handle,
                       const KMeansParams& params,
-                      raft::device_matrix_view<const DataT, IndexT> X,
-                      raft::device_matrix_view<const DataT, IndexT> centroids,
-                      raft::device_matrix_view<DataT, IndexT> X_new)
+                      const raft::device_matrix_view<const DataT, IndexT>& X,
+                      const raft::device_matrix_view<const DataT, IndexT>& centroids,
+                      const raft::device_matrix_view<DataT, IndexT>& X_new)
 {
   detail::kmeans_transform<DataT, IndexT>(handle, params, X, centroids, X_new);
 }
