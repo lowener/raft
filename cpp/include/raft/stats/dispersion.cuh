@@ -98,6 +98,23 @@ value_t dispersion(const raft::handle_t& handle,
                                             handle.get_stream());
 }
 
+/**
+ * @brief Overload of `dispersion` to help the
+ *   compiler find the above overload, in case users pass in
+ *   `std::nullopt` for the optional arguments.
+ *
+ * Please see above for documentation of `dispersion`.
+ */
+template <typename value_t, typename idx_t>
+value_t dispersion(const raft::handle_t& handle,
+                   raft::device_matrix_view<const value_t, idx_t, raft::row_major> centroids,
+                   raft::device_vector_view<const idx_t, idx_t> cluster_sizes,
+                   std::nullopt_t global_centroid,
+                   const idx_t n_points)
+{
+  std::optional<raft::device_vector_view<value_t, idx_t>> opt_centroid = global_centroid;
+  return dispersion(handle, centroids, cluster_sizes, opt_centroid, n_points);
+}
 }  // end namespace stats
 }  // end namespace raft
 
