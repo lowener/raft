@@ -30,6 +30,7 @@ struct SvdInputs {
   int len;
   int n_row;
   int n_col;
+  int algo;
   unsigned long long int seed;
 };
 
@@ -89,11 +90,22 @@ class SvdTest : public ::testing::TestWithParam<SvdInputs<T>> {
       right_eig_vectors_trans_qr_view = raft::make_device_matrix_view<T, int, raft::col_major>(
         right_eig_vectors_trans_qr.data(), params.n_col, params.n_col);
 
-    svd_qr_transpose_right_vec(handle,
-                               data_view,
-                               sing_vals_qr_view,
-                               left_eig_vectors_qr_view,
-                               right_eig_vectors_trans_qr_view);
+    if (params.algo == 0)
+    {
+      svd_qr_transpose_right_vec(handle,
+        data_view,
+        sing_vals_qr_view,
+        left_eig_vectors_qr_view,
+        right_eig_vectors_trans_qr_view);
+    } else
+    {
+      svd_eig(handle,
+        data_view,
+        sing_vals_qr_view,
+        right_eig_vectors_trans_qr_view.value(),
+        left_eig_vectors_qr_view);
+    }
+    
     handle.sync_stream(stream);
   }
 
@@ -106,9 +118,8 @@ class SvdTest : public ::testing::TestWithParam<SvdInputs<T>> {
     left_eig_vectors_ref, right_eig_vectors_ref, sing_vals_ref;
 };
 
-const std::vector<SvdInputs<float>> inputsf2 = {{0.00001f, 3 * 2, 3, 2, 1234ULL}};
-
-const std::vector<SvdInputs<double>> inputsd2 = {{0.00001, 3 * 2, 3, 2, 1234ULL}};
+const std::vector<SvdInputs<float>> inputsf2 = {{0.00001f, 3 * 2, 3, 2, 0, 1234ULL}};
+const std::vector<SvdInputs<double>> inputsd2 = {{0.00001, 3 * 2, 3, 2, 1, 1234ULL}};
 
 typedef SvdTest<float> SvdTestValF;
 TEST_P(SvdTestValF, Result)
