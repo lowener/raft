@@ -16,15 +16,15 @@
 
 #include <bits/stdc++.h>
 
-#include "test_utils.h"
+#include "test_utils.cuh"
 #include <gtest/gtest.h>
 #include <iostream>
 #include <rmm/device_uvector.hpp>
 #include <vector>
 
-#include <raft/core/cudart_utils.hpp>
 #include <raft/core/handle.hpp>
 #include <raft/sparse/mst/mst.cuh>
+#include <raft/util/cudart_utils.hpp>
 
 #include <rmm/device_buffer.hpp>
 

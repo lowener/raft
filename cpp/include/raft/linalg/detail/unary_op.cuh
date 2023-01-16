@@ -16,9 +16,9 @@
 
 #pragma once
 
-#include <raft/core/cudart_utils.hpp>
-#include <raft/cuda_utils.cuh>
-#include <raft/vectorized.cuh>
+#include <raft/util/cuda_utils.cuh>
+#include <raft/util/cudart_utils.hpp>
+#include <raft/util/vectorized.cuh>
 
 namespace raft {
 namespace linalg {

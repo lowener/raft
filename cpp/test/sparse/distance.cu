@@ -18,13 +18,13 @@
 
 #include <cusparse_v2.h>
 
-#include <raft/core/cudart_utils.hpp>
-#include <raft/distance/distance_type.hpp>
+#include <raft/distance/distance_types.hpp>
 #include <raft/sparse/detail/cusparse_wrappers.h>
+#include <raft/util/cudart_utils.hpp>
 
 #include <raft/sparse/distance/distance.cuh>
 
-#include "../test_utils.h"
+#include "../test_utils.cuh"
 
 namespace raft {
 namespace sparse {

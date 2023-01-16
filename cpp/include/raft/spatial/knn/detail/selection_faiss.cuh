@@ -16,16 +16,11 @@
 
 #pragma once
 
-#include <raft/core/cudart_utils.hpp>
-#include <raft/pow2_utils.cuh>
 #include <raft/spatial/knn/faiss_mr.hpp>
+#include <raft/util/cudart_utils.hpp>
+#include <raft/util/pow2_utils.cuh>
 
-#include <faiss/gpu/GpuDistance.h>
-#include <faiss/gpu/GpuIndexFlat.h>
-#include <faiss/gpu/GpuResources.h>
-#include <faiss/gpu/utils/Limits.cuh>
 #include <faiss/gpu/utils/Select.cuh>
-#include <faiss/utils/Heap.h>
 
 namespace raft {
 namespace spatial {

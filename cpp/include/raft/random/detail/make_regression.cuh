@@ -22,7 +22,6 @@
 
 #include <algorithm>
 
-#include <raft/core/cudart_utils.hpp>
 #include <raft/core/handle.hpp>
 #include <raft/linalg/add.cuh>
 #include <raft/linalg/detail/cublas_wrappers.hpp>
@@ -32,6 +31,7 @@
 #include <raft/matrix/matrix.cuh>
 #include <raft/random/permute.cuh>
 #include <raft/random/rng.cuh>
+#include <raft/util/cudart_utils.hpp>
 #include <rmm/device_uvector.hpp>
 
 namespace raft::random {
@@ -158,7 +158,7 @@ void make_regression_caller(const raft::handle_t& handle,
                             DataT noise                      = (DataT)0.0,
                             bool shuffle                     = true,
                             uint64_t seed                    = 0ULL,
-                            raft::random::GeneratorType type = raft::random::GenPhilox)
+                            raft::random::GeneratorType type = raft::random::GenPC)
 {
   n_informative = std::min(n_informative, n_cols);
 

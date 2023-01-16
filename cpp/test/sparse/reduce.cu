@@ -16,13 +16,13 @@
 
 #include <gtest/gtest.h>
 
-#include "../test_utils.h"
+#include "../test_utils.cuh"
 #include <iostream>
 #include <limits>
-#include <raft/core/cudart_utils.hpp>
 #include <raft/core/handle.hpp>
 #include <raft/sparse/coo.hpp>
 #include <raft/sparse/op/reduce.cuh>
+#include <raft/util/cudart_utils.hpp>
 #include <rmm/device_uvector.hpp>
 
 namespace raft {

@@ -15,14 +15,14 @@
  */
 
 #include <gtest/gtest.h>
-#include <raft/core/cudart_utils.hpp>
 #include <raft/sparse/convert/coo.cuh>
 #include <raft/sparse/coo.hpp>
 #include <raft/sparse/linalg/symmetrize.cuh>
+#include <raft/util/cudart_utils.hpp>
 #include <rmm/device_scalar.hpp>
 #include <rmm/device_uvector.hpp>
 
-#include "../test_utils.h"
+#include "../test_utils.cuh"
 
 #include <iostream>
 

@@ -14,6 +14,15 @@
  * limitations under the License.
  */
 
+/**
+ * This file is deprecated and will be removed in a future release.
+ * Please use versions in individual header files instead.
+ */
+
+#pragma message(__FILE__                                                  \
+                " is deprecated and will be removed in a future release." \
+                " Please use versions in individual header files instead.")
+
 #ifndef __MATH_H
 #define __MATH_H
 
@@ -294,15 +303,29 @@ void ratio(
 /** @} */
 
 /**
- * @brief Argmax: find the row idx with maximum value for each column
- * @param in: input matrix
+ * @brief Argmin: find the row idx with minimum value for each column
+ * @param in: input matrix (column-major)
  * @param n_rows: number of rows of input matrix
  * @param n_cols: number of columns of input matrix
  * @param out: output vector of size n_cols
  * @param stream: cuda stream
  */
-template <typename math_t>
-void argmax(const math_t* in, int n_rows, int n_cols, math_t* out, cudaStream_t stream)
+template <typename math_t, typename out_t, typename idx_t = int>
+void argmin(const math_t* in, idx_t n_rows, idx_t n_cols, out_t* out, cudaStream_t stream)
+{
+  detail::argmin(in, n_rows, n_cols, out, stream);
+}
+
+/**
+ * @brief Argmax: find the row idx with maximum value for each column
+ * @param in: input matrix (column-major)
+ * @param n_rows: number of rows of input matrix
+ * @param n_cols: number of columns of input matrix
+ * @param out: output vector of size n_cols
+ * @param stream: cuda stream
+ */
+template <typename math_t, typename out_t, typename idx_t = int>
+void argmax(const math_t* in, idx_t n_rows, idx_t n_cols, out_t* out, cudaStream_t stream)
 {
   detail::argmax(in, n_rows, n_cols, out, stream);
 }

@@ -14,13 +14,14 @@
  * limitations under the License.
  */
 
-#include "../test_utils.h"
+#include "../test_utils.cuh"
 
-#include <raft/core/cudart_utils.hpp>
-#include <raft/cuda_utils.cuh>
 #include <raft/linalg/transpose.cuh>
+#include <raft/util/cuda_utils.cuh>
+#include <raft/util/cudart_utils.hpp>
 
 #include <gtest/gtest.h>
+#include <raft/core/device_mdspan.hpp>
 
 #include <rmm/device_uvector.hpp>
 
@@ -233,7 +234,7 @@ void test_transpose_submatrix()
   }
 
   auto vv     = v.view();
-  auto submat = raft::detail::stdex::submdspan(
+  auto submat = std::experimental::submdspan(
     vv, std::make_tuple(row_beg, row_end), std::make_tuple(col_beg, col_end));
   static_assert(std::is_same_v<typename decltype(submat)::layout_type, layout_stride>);
 

@@ -18,10 +18,10 @@
 
 #include <cooperative_groups.h>
 
-#include <raft/core/cudart_utils.hpp>
-#include <raft/device_atomics.cuh>
 #include <raft/core/handle.hpp>
-#include <raft/vectorized.cuh>
+#include <raft/util/cudart_utils.hpp>
+#include <raft/util/device_atomics.cuh>
+#include <raft/util/vectorized.cuh>
 #include <rmm/device_uvector.hpp>
 
 namespace raft {

@@ -24,11 +24,6 @@ namespace raft {
 namespace linalg {
 
 /**
- * @defgroup QRdecomp QR decomposition
- * @{
- */
-
-/**
  * @brief compute QR decomp and return only Q matrix
  * @param handle: raft handle
  * @param M: input matrix
@@ -36,7 +31,6 @@ namespace linalg {
  * @param n_rows: number rows of input matrix
  * @param n_cols: number columns of input matrix
  * @param stream cuda stream
- * @{
  */
 template <typename math_t>
 void qrGetQ(const raft::handle_t& handle,
@@ -70,6 +64,52 @@ void qrGetQR(const raft::handle_t& handle,
 {
   detail::qrGetQR(handle, M, Q, R, n_rows, n_cols, stream);
 }
+
+/**
+ * @defgroup qr QR Decomposition
+ * @{
+ */
+
+/**
+ * @brief Compute the QR decomposition of matrix M and return only the Q matrix.
+ * @param[in] handle raft::handle_t
+ * @param[in] M Input raft::device_matrix_view
+ * @param[out] Q Output raft::device_matrix_view
+ */
+template <typename ElementType, typename IndexType>
+void qr_get_q(const raft::handle_t& handle,
+              raft::device_matrix_view<const ElementType, IndexType, raft::col_major> M,
+              raft::device_matrix_view<ElementType, IndexType, raft::col_major> Q)
+{
+  RAFT_EXPECTS(Q.size() == M.size(), "Size mismatch between Output and Input");
+
+  qrGetQ(handle, M.data_handle(), Q.data_handle(), M.extent(0), M.extent(1), handle.get_stream());
+}
+
+/**
+ * @brief Compute the QR decomposition of matrix M and return both the Q and R matrices.
+ * @param[in] handle raft::handle_t
+ * @param[in] M Input raft::device_matrix_view
+ * @param[in] Q Output raft::device_matrix_view
+ * @param[out] R Output raft::device_matrix_view
+ */
+template <typename ElementType, typename IndexType>
+void qr_get_qr(const raft::handle_t& handle,
+               raft::device_matrix_view<const ElementType, IndexType, raft::col_major> M,
+               raft::device_matrix_view<ElementType, IndexType, raft::col_major> Q,
+               raft::device_matrix_view<ElementType, IndexType, raft::col_major> R)
+{
+  RAFT_EXPECTS(Q.size() == M.size(), "Size mismatch between Output and Input");
+
+  qrGetQR(handle,
+          M.data_handle(),
+          Q.data_handle(),
+          R.data_handle(),
+          M.extent(0),
+          M.extent(1),
+          handle.get_stream());
+}
+
 /** @} */
 
 };  // namespace linalg

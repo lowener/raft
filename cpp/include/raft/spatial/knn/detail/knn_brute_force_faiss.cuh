@@ -16,22 +16,20 @@
 
 #pragma once
 
-#include <raft/core/cudart_utils.hpp>
-#include <raft/cuda_utils.cuh>
+#include <raft/util/cuda_utils.cuh>
+#include <raft/util/cudart_utils.hpp>
 #include <rmm/cuda_stream_pool.hpp>
 
 #include <rmm/device_uvector.hpp>
 
 #include <faiss/gpu/GpuDistance.h>
-#include <faiss/gpu/GpuResources.h>
 #include <faiss/gpu/utils/Limits.cuh>
 #include <faiss/gpu/utils/Select.cuh>
-#include <faiss/utils/Heap.h>
 
 #include <cstdint>
 #include <iostream>
 #include <raft/core/handle.hpp>
-#include <raft/distance/distance_type.hpp>
+#include <raft/distance/distance_types.hpp>
 #include <raft/spatial/knn/faiss_mr.hpp>
 #include <set>
 #include <thrust/iterator/transform_iterator.h>

@@ -15,8 +15,8 @@
  */
 
 #include <common/benchmark.hpp>
-#include <raft/core/cudart_utils.hpp>
 #include <raft/distance/distance.cuh>
+#include <raft/util/cudart_utils.hpp>
 #if defined RAFT_DISTANCE_COMPILED
 #include <raft/distance/specializations.cuh>
 #endif

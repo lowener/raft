@@ -18,7 +18,7 @@
 
 #include "cublas_wrappers.hpp"
 
-#include <raft/core/mdarray.hpp>
+#include <raft/core/device_mdspan.hpp>
 #include <raft/core/handle.hpp>
 #include <rmm/exec_policy.hpp>
 #include <thrust/for_each.h>

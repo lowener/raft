@@ -18,12 +18,12 @@
 
 #include <limits.h>
 
-#include <raft/core/cudart_utils.hpp>
-#include <raft/cuda_utils.cuh>
-#include <raft/distance/distance_type.hpp>
+#include <raft/distance/distance_types.hpp>
 #include <raft/sparse/detail/utils.h>
 #include <raft/sparse/distance/common.h>
 #include <raft/sparse/distance/detail/ip_distance.cuh>
+#include <raft/util/cuda_utils.cuh>
+#include <raft/util/cudart_utils.hpp>
 #include <rmm/device_uvector.hpp>
 
 #include <nvfunctional>

@@ -18,12 +18,12 @@
 
 #include <cusparse_v2.h>
 
-#include <raft/core/cudart_utils.hpp>
-#include <raft/cuda_utils.cuh>
 #include <raft/sparse/detail/cusparse_wrappers.h>
+#include <raft/util/cuda_utils.cuh>
+#include <raft/util/cudart_utils.hpp>
 
-#include <raft/device_atomics.cuh>
 #include <raft/sparse/op/sort.cuh>
+#include <raft/util/device_atomics.cuh>
 #include <thrust/device_ptr.h>
 #include <thrust/scan.h>
 
@@ -86,7 +86,7 @@ __global__ void max_duplicates_kernel(const value_idx* src_rows,
  *
  * Note that this function always marks the first value as 0 so that
  * a cumulative sum can be performed as a follow-on. However, even
- * if the mask is used direclty, any duplicates should always have a
+ * if the mask is used directly, any duplicates should always have a
  * 1 when first encountered so it can be assumed that the first element
  * is always a 1 otherwise.
  *

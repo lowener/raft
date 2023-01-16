@@ -16,12 +16,12 @@
 
 #include <gtest/gtest.h>
 
-#include "../test_utils.h"
+#include "../test_utils.cuh"
 
-#include <raft/core/cudart_utils.hpp>
 #include <raft/core/handle.hpp>
 #include <raft/sparse/csr.hpp>
 #include <raft/sparse/linalg/norm.cuh>
+#include <raft/util/cudart_utils.hpp>
 
 #include <iostream>
 #include <limits>

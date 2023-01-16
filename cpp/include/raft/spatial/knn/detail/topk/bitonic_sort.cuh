@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include <raft/cuda_utils.cuh>
+#include <raft/util/cuda_utils.cuh>
 
 namespace raft::spatial::knn::detail::topk {
 
@@ -94,7 +94,7 @@ class bitonic {
    * You can think of this function in two ways:
    *
    *   1) Sort any bitonic sequence.
-   *   2) Merge two halfs of the input data assuming they're already sorted, and their order is
+   *   2) Merge two halves of the input data assuming they're already sorted, and their order is
    *      opposite (i.e. either ascending, descending or vice-versa).
    *
    * The input pointers are unique per-thread.

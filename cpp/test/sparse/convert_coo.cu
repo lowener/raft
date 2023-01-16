@@ -20,9 +20,9 @@
 #include <raft/sparse/convert/coo.cuh>
 #include <raft/sparse/csr.hpp>
 
-#include <raft/core/cudart_utils.hpp>
+#include <raft/util/cudart_utils.hpp>
 
-#include "../test_utils.h"
+#include "../test_utils.cuh"
 
 #include <iostream>
 #include <limits>

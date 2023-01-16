@@ -16,11 +16,11 @@
 
 #pragma once
 
-#include <raft/core/cudart_utils.hpp>
-#include <raft/cuda_utils.cuh>
 #include <raft/sparse/coo.hpp>
 #include <raft/sparse/detail/cusparse_wrappers.h>
 #include <raft/sparse/detail/utils.h>
+#include <raft/util/cuda_utils.cuh>
+#include <raft/util/cudart_utils.hpp>
 #include <rmm/exec_policy.hpp>
 
 #include <thrust/device_ptr.h>

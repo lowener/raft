@@ -16,8 +16,8 @@
 
 #pragma once
 
-#include <raft/cuda_utils.cuh>
 #include <raft/random/rng_state.hpp>
+#include <raft/util/cuda_utils.cuh>
 
 #include <curand_kernel.h>
 
@@ -667,7 +667,7 @@ __global__ void rngKernel(DeviceState<GenType> rng_state,
                           LenType len,
                           ParamType params)
 {
-  LenType tid = threadIdx.x + blockIdx.x * blockDim.x;
+  LenType tid = threadIdx.x + static_cast<LenType>(blockIdx.x) * blockDim.x;
   GenType gen(rng_state, (uint64_t)tid);
   const LenType stride = gridDim.x * blockDim.x;
   for (LenType idx = tid; idx < len; idx += stride * ITEMS_PER_CALL) {
@@ -681,6 +681,40 @@ __global__ void rngKernel(DeviceState<GenType> rng_state,
   return;
 }
 
+template <typename GenType, typename OutType, typename WeightType, typename IdxType>
+__global__ void sample_with_replacement_kernel(DeviceState<GenType> rng_state,
+                                               OutType* out,
+                                               const WeightType* weights_csum,
+                                               IdxType sampledLen,
+                                               IdxType len)
+{
+  // todo(lsugy): warp-collaborative binary search
+
+  IdxType tid = threadIdx.x + static_cast<IdxType>(blockIdx.x) * blockDim.x;
+  GenType gen(rng_state, static_cast<uint64_t>(tid));
+
+  if (tid < sampledLen) {
+    WeightType val_01;
+    gen.next(val_01);
+    WeightType val_search = val_01 * weights_csum[len - 1];
+
+    // Binary search of the first index for which the cumulative sum of weights is larger than the
+    // generated value
+    IdxType idx_start = 0;
+    IdxType idx_end   = len;
+    while (idx_end > idx_start) {
+      IdxType idx_middle    = (idx_start + idx_end) / 2;
+      WeightType val_middle = weights_csum[idx_middle];
+      if (val_search <= val_middle) {
+        idx_end = idx_middle;
+      } else {
+        idx_start = idx_middle + 1;
+      }
+    }
+    out[tid] = static_cast<OutType>(min(idx_start, len - 1));
+  }
+}
+
 /**
  * This kernel is deprecated and should be removed in a future release
  */
@@ -692,7 +726,7 @@ template <typename OutType,
 __global__ void fillKernel(
   uint64_t seed, uint64_t adv_subs, uint64_t offset, OutType* ptr, LenType len, ParamType params)
 {
-  LenType tid = threadIdx.x + blockIdx.x * blockDim.x;
+  LenType tid = threadIdx.x + static_cast<LenType>(blockIdx.x) * blockDim.x;
   GenType gen(seed, adv_subs + (uint64_t)tid, offset);
   const LenType stride = gridDim.x * blockDim.x;
   for (LenType idx = tid; idx < len; idx += stride * ITEMS_PER_CALL) {

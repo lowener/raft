@@ -15,8 +15,8 @@
  */
 
 #include <cusparse_v2.h>
-#include <raft/core/cudart_utils.hpp>
 #include <raft/core/handle.hpp>
+#include <raft/util/cudart_utils.hpp>
 
 #include <gtest/gtest.h>
 #include <raft/sparse/detail/cusparse_wrappers.h>
@@ -24,7 +24,7 @@
 
 #include <rmm/device_uvector.hpp>
 
-#include "../test_utils.h"
+#include "../test_utils.cuh"
 
 namespace raft {
 namespace sparse {

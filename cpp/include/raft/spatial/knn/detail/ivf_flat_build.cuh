@@ -24,7 +24,12 @@
 #include <raft/core/logger.hpp>
 #include <raft/core/mdarray.hpp>
 #include <raft/core/nvtx.hpp>
-#include <raft/pow2_utils.cuh>
+#include <raft/core/operators.hpp>
+#include <raft/linalg/add.cuh>
+#include <raft/linalg/norm.cuh>
+#include <raft/linalg/unary_op.cuh>
+#include <raft/stats/histogram.cuh>
+#include <raft/util/pow2_utils.cuh>
 
 #include <rmm/cuda_stream_view.hpp>
 
@@ -44,13 +49,16 @@ using namespace raft::spatial::knn::detail;  // NOLINT
  *   X dimension must cover the dataset (n_rows), YZ are not used;
  *   there are no dependencies between threads, hence no constraints on the block size.
  *
- * @tparam T the element type.
- * @tparam IdxT type of the indices in the source source_vecs
+ * @tparam T      element type.
+ * @tparam IdxT   type of the indices in the source source_vecs
+ * @tparam LabelT label type
+ * @tparam gather_src if false, then we build the index from vectors source_vecs[i,:], otherwise
+ *     we use source_vecs[source_ixs[i],:]. In both cases i=0..n_rows-1.
  *
  * @param[in] labels device pointer to the cluster ids for each row [n_rows]
  * @param[in] list_offsets device pointer to the cluster offsets in the output (index) [n_lists]
- * @param[in] source_vecs device poitner to the input data [n_rows, dim]
- * @param[in] source_ixs device poitner to the input indices [n_rows]
+ * @param[in] source_vecs device pointer to the input data [n_rows, dim]
+ * @param[in] source_ixs device pointer to the input indices [n_rows]
  * @param[out] list_data device pointer to the output [index_size, dim]
  * @param[out] list_index device pointer to the source ids corr. to the output [index_size]
  * @param[out] list_sizes_ptr device pointer to the cluster sizes [n_lists];
@@ -60,8 +68,8 @@ using namespace raft::spatial::knn::detail;  // NOLINT
  * @param veclen size of vectorized loads/stores; must satisfy `dim % veclen == 0`.
  *
  */
-template <typename T, typename IdxT>
-__global__ void build_index_kernel(const uint32_t* labels,
+template <typename T, typename IdxT, typename LabelT, bool gather_src = false>
+__global__ void build_index_kernel(const LabelT* labels,
                                    const IdxT* list_offsets,
                                    const T* source_vecs,
                                    const IdxT* source_ixs,
@@ -91,8 +99,11 @@ __global__ void build_index_kernel(const uint32_t* labels,
   list_data += (list_offset + group_offset) * dim;
 
   // Point to the source vector
-  source_vecs += i * dim;
-
+  if constexpr (gather_src) {
+    source_vecs += source_ixs[i] * dim;
+  } else {
+    source_vecs += i * dim;
+  }
   // Interleave dimensions of the source vector while recording it.
   // NB: such `veclen` is selected, that `dim % veclen == 0`
   for (uint32_t l = 0; l < dim; l += veclen) {
@@ -110,6 +121,8 @@ inline auto extend(const handle_t& handle,
                    const IdxT* new_indices,
                    IdxT n_rows) -> index<T, IdxT>
 {
+  using LabelT = uint32_t;
+
   auto stream  = handle.get_stream();
   auto n_lists = orig_index.n_lists();
   auto dim     = orig_index.dim();
@@ -119,18 +132,19 @@ inline auto extend(const handle_t& handle,
   RAFT_EXPECTS(new_indices != nullptr || orig_index.size() == 0,
                "You must pass data indices when the index is non-empty.");
 
-  rmm::device_uvector<uint32_t> new_labels(n_rows, stream);
-  kmeans::predict(handle,
-                  orig_index.centers().data_handle(),
-                  n_lists,
-                  dim,
-                  new_vectors,
-                  n_rows,
-                  new_labels.data(),
-                  orig_index.metric(),
-                  stream);
+  rmm::device_uvector<LabelT> new_labels(n_rows, stream);
+  kmeans::predict<T, IdxT, LabelT>(handle,
+                                   orig_index.centers().data_handle(),
+                                   n_lists,
+                                   dim,
+                                   new_vectors,
+                                   n_rows,
+                                   new_labels.data(),
+                                   orig_index.metric(),
+                                   stream);
 
-  index<T, IdxT> ext_index(handle, orig_index.metric(), n_lists, dim);
+  index<T, IdxT> ext_index(
+    handle, orig_index.metric(), n_lists, orig_index.adaptive_centers(), dim);
 
   auto list_sizes_ptr   = ext_index.list_sizes().data_handle();
   auto list_offsets_ptr = ext_index.list_offsets().data_handle();
@@ -138,18 +152,31 @@ inline auto extend(const handle_t& handle,
 
   // Calculate the centers and sizes on the new data, starting from the original values
   raft::copy(centers_ptr, orig_index.centers().data_handle(), ext_index.centers().size(), stream);
-  raft::copy(
-    list_sizes_ptr, orig_index.list_sizes().data_handle(), ext_index.list_sizes().size(), stream);
 
-  kmeans::calc_centers_and_sizes(centers_ptr,
-                                 list_sizes_ptr,
-                                 n_lists,
-                                 dim,
-                                 new_vectors,
-                                 n_rows,
-                                 new_labels.data(),
-                                 false,
-                                 stream);
+  if (ext_index.adaptive_centers()) {
+    raft::copy(
+      list_sizes_ptr, orig_index.list_sizes().data_handle(), ext_index.list_sizes().size(), stream);
+    kmeans::calc_centers_and_sizes(handle,
+                                   centers_ptr,
+                                   list_sizes_ptr,
+                                   n_lists,
+                                   dim,
+                                   new_vectors,
+                                   n_rows,
+                                   new_labels.data(),
+                                   false,
+                                   stream);
+  } else {
+    raft::stats::histogram<uint32_t, IdxT>(raft::stats::HistTypeAuto,
+                                           reinterpret_cast<int32_t*>(list_sizes_ptr),
+                                           IdxT(n_lists),
+                                           new_labels.data(),
+                                           n_rows,
+                                           1,
+                                           stream);
+    raft::linalg::add(
+      list_sizes_ptr, list_sizes_ptr, orig_index.list_sizes().data_handle(), n_lists, stream);
+  }
 
   // Calculate new offsets
   IdxT index_size = 0;
@@ -206,12 +233,22 @@ inline auto extend(const handle_t& handle,
 
   // Precompute the centers vector norms for L2Expanded distance
   if (ext_index.center_norms().has_value()) {
-    utils::dots_along_rows(n_lists,
-                           dim,
-                           ext_index.centers().data_handle(),
-                           ext_index.center_norms()->data_handle(),
-                           stream);
-    RAFT_LOG_TRACE_VEC(ext_index.center_norms()->data_handle(), std::min<uint32_t>(dim, 20));
+    if (!ext_index.adaptive_centers() && orig_index.center_norms().has_value()) {
+      raft::copy(ext_index.center_norms()->data_handle(),
+                 orig_index.center_norms()->data_handle(),
+                 orig_index.center_norms()->size(),
+                 stream);
+    } else {
+      raft::linalg::rowNorm(ext_index.center_norms()->data_handle(),
+                            ext_index.centers().data_handle(),
+                            dim,
+                            n_lists,
+                            raft::linalg::L2Norm,
+                            true,
+                            stream,
+                            raft::sqrt_op());
+      RAFT_LOG_TRACE_VEC(ext_index.center_norms()->data_handle(), std::min<uint32_t>(dim, 20));
+    }
   }
 
   // assemble the index
@@ -235,17 +272,31 @@ inline auto build(
   utils::memzero(index.list_sizes().data_handle(), index.list_sizes().size(), stream);
   utils::memzero(index.list_offsets().data_handle(), index.list_offsets().size(), stream);
 
-  // Predict labels of the whole dataset
-  kmeans::build_optimized_kmeans(handle,
-                                 params.kmeans_n_iters,
-                                 dim,
-                                 dataset,
-                                 n_rows,
-                                 index.centers().data_handle(),
-                                 params.n_lists,
-                                 params.kmeans_trainset_fraction,
-                                 params.metric,
-                                 stream);
+  // Train the kmeans clustering
+  {
+    auto trainset_ratio = std::max<size_t>(
+      1, n_rows / std::max<size_t>(params.kmeans_trainset_fraction * n_rows, index.n_lists()));
+    auto n_rows_train = n_rows / trainset_ratio;
+    rmm::device_uvector<T> trainset(n_rows_train * index.dim(), stream);
+    // TODO: a proper sampling
+    RAFT_CUDA_TRY(cudaMemcpy2DAsync(trainset.data(),
+                                    sizeof(T) * index.dim(),
+                                    dataset,
+                                    sizeof(T) * index.dim() * trainset_ratio,
+                                    sizeof(T) * index.dim(),
+                                    n_rows_train,
+                                    cudaMemcpyDefault,
+                                    stream));
+    kmeans::build_hierarchical<T, IdxT>(handle,
+                                        params.kmeans_n_iters,
+                                        index.dim(),
+                                        trainset.data(),
+                                        n_rows_train,
+                                        index.centers().data_handle(),
+                                        index.n_lists(),
+                                        index.metric(),
+                                        stream);
+  }
 
   // add the data if necessary
   if (params.add_data_on_build) {
@@ -255,4 +306,76 @@ inline auto build(
   }
 }
 
+/**
+ * Build an index that can be used in refinement operation.
+ *
+ * See raft::neighbors::refine for details on the refinement operation.
+ *
+ * The returned index cannot be used for a regular ivf_flat::search. The index misses information
+ * about coarse clusters. Instead, the neighbor candidates are assumed to form clusters, one for
+ * each query. The candidate vectors are gathered into the index dataset, that can be later used
+ * in ivfflat_interleaved_scan.
+ *
+ * @param[in] handle the raft handle
+ * @param[inout] refinement_index
+ * @param[in] dataset device pointer to dataset vectors, size [n_rows, dim]. Note that n_rows is
+ *   not known to this function, but each candidate_idx has to be smaller than n_rows.
+ * @param[in] candidate_idx device pointer to neighbor candidates, size [n_queries, n_candidates]
+ * @param[in] n_candidates  of neighbor_candidates
+ */
+template <typename T, typename IdxT>
+inline void fill_refinement_index(const handle_t& handle,
+                                  index<T, IdxT>* refinement_index,
+                                  const T* dataset,
+                                  const IdxT* candidate_idx,
+                                  IdxT n_queries,
+                                  uint32_t n_candidates)
+{
+  using LabelT = uint32_t;
+
+  auto stream      = handle.get_stream();
+  uint32_t n_lists = n_queries;
+  common::nvtx::range<common::nvtx::domain::raft> fun_scope(
+    "ivf_flat::fill_refinement_index(%zu, %u)", size_t(n_queries));
+
+  rmm::device_uvector<LabelT> new_labels(n_queries * n_candidates, stream);
+  linalg::writeOnlyUnaryOp(
+    new_labels.data(),
+    n_queries * n_candidates,
+    [n_candidates] __device__(LabelT * out, uint32_t i) { *out = i / n_candidates; },
+    stream);
+
+  auto list_sizes_ptr   = refinement_index->list_sizes().data_handle();
+  auto list_offsets_ptr = refinement_index->list_offsets().data_handle();
+  // We do not fill centers and center norms, since we will not run coarse search.
+
+  // Calculate new offsets
+  uint32_t n_roundup = Pow2<kIndexGroupSize>::roundUp(n_candidates);
+  linalg::writeOnlyUnaryOp(
+    refinement_index->list_offsets().data_handle(),
+    refinement_index->list_offsets().size(),
+    [n_roundup] __device__(IdxT * out, uint32_t i) { *out = i * n_roundup; },
+    stream);
+
+  IdxT index_size = n_roundup * n_lists;
+  refinement_index->allocate(
+    handle, index_size, refinement_index->metric() == raft::distance::DistanceType::L2Expanded);
+
+  RAFT_CUDA_TRY(cudaMemsetAsync(list_sizes_ptr, 0, n_lists * sizeof(uint32_t), stream));
+
+  const dim3 block_dim(256);
+  const dim3 grid_dim(raft::ceildiv<IdxT>(n_queries * n_candidates, block_dim.x));
+  build_index_kernel<T, IdxT, LabelT, true>
+    <<<grid_dim, block_dim, 0, stream>>>(new_labels.data(),
+                                         list_offsets_ptr,
+                                         dataset,
+                                         candidate_idx,
+                                         refinement_index->data().data_handle(),
+                                         refinement_index->indices().data_handle(),
+                                         list_sizes_ptr,
+                                         n_queries * n_candidates,
+                                         refinement_index->dim(),
+                                         refinement_index->veclen());
+  RAFT_CUDA_TRY(cudaPeekAtLastError());
+}
 }  // namespace raft::spatial::knn::ivf_flat::detail

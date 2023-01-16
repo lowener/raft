@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include <raft/core/cudart_utils.hpp>
+#include <raft/util/cudart_utils.hpp>
 
 #include <gtest/gtest.h>
 
@@ -60,7 +60,7 @@ TEST(Raft, Utils)
     std::string msg_full{e.what()};
     // only use first line
     std::string msg = msg_full.substr(0, msg_full.find('\n'));
-    std::string re_exp{"^exception occured! file="};
+    std::string re_exp{"^exception occurred! file="};
     re_exp += reg_file;
     // test code must be at line >10 (copyright), assume line is never >9999
     re_exp += " line=\\d{2,4}: ";

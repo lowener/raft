@@ -16,11 +16,11 @@
 
 #pragma once
 
-#include <raft/core/cudart_utils.hpp>
-#include <raft/cuda_utils.cuh>
+#include <raft/util/cuda_utils.cuh>
+#include <raft/util/cudart_utils.hpp>
 
-#include <faiss/gpu/GpuDistance.h>
-#include <raft/distance/distance_type.hpp>
+#include <faiss/MetricType.h>
+#include <raft/distance/distance_types.hpp>
 
 namespace raft {
 namespace spatial {

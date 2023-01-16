@@ -20,6 +20,8 @@
 
 #include "detail/svd.cuh"
 
+#include <optional>
+
 namespace raft {
 namespace linalg {
 
@@ -38,9 +40,6 @@ namespace linalg {
  * @param gen_right_vec: generate right eig vector. Not activated.
  * @param stream cuda stream
  */
-// TODO: activate gen_left_vec and gen_right_vec options
-// TODO: couldn't template this function due to cusolverDnSgesvd and
-// cusolverSnSgesvd. Check if there is any other way.
 template <typename T>
 void svdQR(const raft::handle_t& handle,
            T* in,
@@ -67,14 +66,14 @@ void svdQR(const raft::handle_t& handle,
                 stream);
 }
 
-template <typename T>
+template <typename math_t, typename idx_t>
 void svdEig(const raft::handle_t& handle,
-            T* in,
-            int n_rows,
-            int n_cols,
-            T* S,
-            T* U,
-            T* V,
+            math_t* in,
+            idx_t n_rows,
+            idx_t n_cols,
+            math_t* S,
+            math_t* U,
+            math_t* V,
             bool gen_left_vec,
             cudaStream_t stream)
 {
@@ -181,6 +180,213 @@ bool evaluateSVDByL2Norm(const raft::handle_t& handle,
 {
   return detail::evaluateSVDByL2Norm(handle, A_d, U, S_vec, V, n_rows, n_cols, k, tol, stream);
 }
+
+/**
+ * @defgroup svd Singular Value Decomposition
+ * @{
+ */
+
+/**
+ * @brief singular value decomposition (SVD) on a column major
+ * matrix using QR decomposition
+ * @tparam ValueType value type of parameters
+ * @tparam IndexType index type of parameters
+ * @tparam UType std::optional<raft::device_matrix_view<ValueType, IndexType, raft::col_major>> @c
+ * U_in
+ * @tparam VType std::optional<raft::device_matrix_view<ValueType, IndexType, raft::col_major>> @c
+ * V_in
+ * @param[in] handle raft::handle_t
+ * @param[in] in input raft::device_matrix_view with layout raft::col_major of shape (M, N)
+ * @param[out] sing_vals singular values raft::device_vector_view of shape (K)
+ * @param[out] U_in std::optional left singular values of raft::device_matrix_view with layout
+ * raft::col_major and dimensions (m, n)
+ * @param[out] V_in std::optional right singular values of raft::device_matrix_view with
+ * layout raft::col_major and dimensions (n, n)
+ */
+template <typename ValueType, typename IndexType, typename UType, typename VType>
+void svd_qr(const raft::handle_t& handle,
+            raft::device_matrix_view<const ValueType, IndexType, raft::col_major> in,
+            raft::device_vector_view<ValueType, IndexType> sing_vals,
+            UType&& U_in,
+            VType&& V_in)
+{
+  std::optional<raft::device_matrix_view<ValueType, IndexType, raft::col_major>> U =
+    std::forward<UType>(U_in);
+  std::optional<raft::device_matrix_view<ValueType, IndexType, raft::col_major>> V =
+    std::forward<VType>(V_in);
+
+  if (U) {
+    RAFT_EXPECTS(in.extent(0) == U.value().extent(0) && in.extent(1) == U.value().extent(1),
+                 "U should have dimensions m * n");
+  }
+  if (V) {
+    RAFT_EXPECTS(in.extent(1) == V.value().extent(0) && in.extent(1) == V.value().extent(1),
+                 "V should have dimensions n * n");
+  }
+  svdQR(handle,
+        const_cast<ValueType*>(in.data_handle()),
+        in.extent(0),
+        in.extent(1),
+        sing_vals.data_handle(),
+        U.value().data_handle(),
+        V.value().data_handle(),
+        false,
+        U.has_value(),
+        V.has_value(),
+        handle.get_stream());
+}
+
+/**
+ * @brief Overload of `svd_qr` to help the
+ *   compiler find the above overload, in case users pass in
+ *   `std::nullopt` for one or both of the optional arguments.
+ *
+ * Please see above for documentation of `svd_qr`.
+ */
+template <typename... Args, typename = std::enable_if_t<sizeof...(Args) == 3>>
+void svd_qr(Args... args)
+{
+  svd_qr(std::forward<Args>(args)..., std::nullopt, std::nullopt);
+}
+
+/**
+ * @brief singular value decomposition (SVD) on a column major
+ * matrix using QR decomposition. Right singular vector matrix is transposed before returning
+ * @tparam ValueType value type of parameters
+ * @tparam IndexType index type of parameters
+ * @tparam UType std::optional<raft::device_matrix_view<ValueType, IndexType, raft::col_major>> @c
+ * U_in
+ * @tparam VType std::optional<raft::device_matrix_view<ValueType, IndexType, raft::col_major>> @c
+ * V_in
+ * @param[in] handle raft::handle_t
+ * @param[in] in input raft::device_matrix_view with layout raft::col_major of shape (M, N)
+ * @param[out] sing_vals singular values raft::device_vector_view of shape (K)
+ * @param[out] U_in std::optional left singular values of raft::device_matrix_view with layout
+ * raft::col_major and dimensions (m, n)
+ * @param[out] V_in std::optional right singular values of raft::device_matrix_view with
+ * layout raft::col_major and dimensions (n, n)
+ */
+template <typename ValueType, typename IndexType, typename UType, typename VType>
+void svd_qr_transpose_right_vec(
+  const raft::handle_t& handle,
+  raft::device_matrix_view<const ValueType, IndexType, raft::col_major> in,
+  raft::device_vector_view<ValueType, IndexType> sing_vals,
+  UType&& U_in,
+  VType&& V_in)
+{
+  std::optional<raft::device_matrix_view<ValueType, IndexType, raft::col_major>> U =
+    std::forward<UType>(U_in);
+  std::optional<raft::device_matrix_view<ValueType, IndexType, raft::col_major>> V =
+    std::forward<VType>(V_in);
+
+  if (U) {
+    RAFT_EXPECTS(in.extent(0) == U.value().extent(0) && in.extent(1) == U.value().extent(1),
+                 "U should have dimensions m * n");
+  }
+  if (V) {
+    RAFT_EXPECTS(in.extent(1) == V.value().extent(0) && in.extent(1) == V.value().extent(1),
+                 "V should have dimensions n * n");
+  }
+  svdQR(handle,
+        const_cast<ValueType*>(in.data_handle()),
+        in.extent(0),
+        in.extent(1),
+        sing_vals.data_handle(),
+        U.value().data_handle(),
+        V.value().data_handle(),
+        true,
+        U.has_value(),
+        V.has_value(),
+        handle.get_stream());
+}
+
+/**
+ * @brief Overload of `svd_qr_transpose_right_vec` to help the
+ *   compiler find the above overload, in case users pass in
+ *   `std::nullopt` for one or both of the optional arguments.
+ *
+ * Please see above for documentation of `svd_qr_transpose_right_vec`.
+ */
+template <typename... Args, typename = std::enable_if_t<sizeof...(Args) == 3>>
+void svd_qr_transpose_right_vec(Args... args)
+{
+  svd_qr_transpose_right_vec(std::forward<Args>(args)..., std::nullopt, std::nullopt);
+}
+
+/**
+ * @brief singular value decomposition (SVD) on a column major
+ * matrix using Eigen decomposition. A square symmetric covariance matrix is constructed for the SVD
+ * @param[in] handle raft::handle_t
+ * @param[in] in input raft::device_matrix_view with layout raft::col_major of shape (M, N)
+ * @param[out] S singular values raft::device_vector_view of shape (K)
+ * @param[out] V right singular values of raft::device_matrix_view with layout
+ * raft::col_major and dimensions (m, n)
+ * @param[out] U optional left singular values of raft::device_matrix_view with layout
+ * raft::col_major and dimensions (m, n)
+ */
+template <typename ValueType, typename IndexType>
+void svd_eig(
+  const raft::handle_t& handle,
+  raft::device_matrix_view<const ValueType, IndexType, raft::col_major> in,
+  raft::device_vector_view<ValueType, IndexType> S,
+  raft::device_matrix_view<ValueType, IndexType, raft::col_major> V,
+  std::optional<raft::device_matrix_view<ValueType, IndexType, raft::col_major>> U = std::nullopt)
+{
+  if (U) {
+    RAFT_EXPECTS(in.extent(0) == U.value().extent(0) && in.extent(1) == U.value().extent(1),
+                 "U should have dimensions m * n");
+  }
+  RAFT_EXPECTS(in.extent(0) == V.extent(0) && in.extent(1) == V.extent(1),
+               "V should have dimensions n * n");
+  svdEig(handle,
+         const_cast<ValueType*>(in.data_handle()),
+         in.extent(0),
+         in.extent(1),
+         S.data_handle(),
+         U.value().data_handle(),
+         V.value().data_handle(),
+         U.has_value(),
+         handle.get_stream());
+}
+
+/**
+ * @brief reconstruct a matrix use left and right singular vectors and
+ * singular values
+ * @param[in] handle raft::handle_t
+ * @param[in] U left singular values of raft::device_matrix_view with layout
+ * raft::col_major and dimensions (m, k)
+ * @param[in] S singular values raft::device_vector_view of shape (k, k)
+ * @param[in] V right singular values of raft::device_matrix_view with layout
+ * raft::col_major and dimensions (k, n)
+ * @param[out] out output raft::device_matrix_view with layout raft::col_major of shape (m, n)
+ */
+template <typename ValueType, typename IndexType>
+void svd_reconstruction(const raft::handle_t& handle,
+                        raft::device_matrix_view<const ValueType, IndexType, raft::col_major> U,
+                        raft::device_vector_view<const ValueType, IndexType> S,
+                        raft::device_matrix_view<const ValueType, IndexType, raft::col_major> V,
+                        raft::device_matrix_view<ValueType, IndexType, raft::col_major> out)
+{
+  RAFT_EXPECTS(S.extent(0) == S.extent(1), "S should be a square matrix");
+  RAFT_EXPECTS(S.extent(0) == U.extent(1),
+               "Number of rows of S should be equal to number of columns in U");
+  RAFT_EXPECTS(S.extent(1) == V.extent(0),
+               "Number of columns of S should be equal to number of rows in V");
+  RAFT_EXPECTS(out.extent(0) == U.extent(0) && out.extent(1) == V.extent(1),
+               "Number of rows should be equal in out and U and number of columns should be equal "
+               "in out and V");
+
+  svdReconstruction(handle,
+                    const_cast<ValueType*>(U.data_handle()),
+                    const_cast<ValueType*>(S.data_handle()),
+                    const_cast<ValueType*>(V.data_handle()),
+                    out.extent(0),
+                    out.extent(1),
+                    S.extent(0),
+                    handle.get_stream());
+}
+
+/** @} */  // end of group svd
 
 };  // end namespace linalg
 };  // end namespace raft

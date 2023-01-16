@@ -19,7 +19,7 @@
 #pragma once
 
 #include "detail/transpose.cuh"
-#include <raft/core/mdarray.hpp>
+#include <raft/core/device_mdarray.hpp>
 
 namespace raft {
 namespace linalg {
@@ -55,6 +55,11 @@ void transpose(math_t* inout, int n, cudaStream_t stream)
 {
   detail::transpose(inout, n, stream);
 }
+
+/**
+ * @defgroup transpose Matrix transpose
+ * @{
+ */
 
 /**
  * @brief Transpose a matrix. The output has same layout policy as the input.
@@ -94,6 +99,9 @@ auto transpose(handle_t const& handle,
     }
   }
 }
+
+/** @} */  // end of group transpose
+
 };  // end namespace linalg
 };  // end namespace raft
 

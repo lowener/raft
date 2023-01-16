@@ -15,9 +15,9 @@
  */
 
 #pragma once
-#include <raft/cuda_utils.cuh>
 #include <raft/distance/detail/pairwise_distance_base.cuh>
 #include <raft/linalg/reduce.cuh>
+#include <raft/util/cuda_utils.cuh>
 
 namespace raft {
 namespace distance {
@@ -262,8 +262,8 @@ void correlationImpl(int m,
                          true,
                          stream,
                          false,
-                         raft::Nop<InType>(),
-                         raft::Sum<InType>());
+                         raft::identity_op(),
+                         raft::add_op());
     raft::linalg::reduce(norm_row_vec,
                          pB,
                          k,
@@ -273,8 +273,8 @@ void correlationImpl(int m,
                          true,
                          stream,
                          false,
-                         raft::Nop<InType>(),
-                         raft::Sum<InType>());
+                         raft::identity_op(),
+                         raft::add_op());
 
     sq_norm_col_vec += (m + n);
     sq_norm_row_vec = sq_norm_col_vec + m;
@@ -290,8 +290,8 @@ void correlationImpl(int m,
                          true,
                          stream,
                          false,
-                         raft::Nop<InType>(),
-                         raft::Sum<InType>());
+                         raft::identity_op(),
+                         raft::add_op());
     sq_norm_col_vec += m;
     sq_norm_row_vec = sq_norm_col_vec;
     raft::linalg::rowNorm(sq_norm_col_vec, pA, k, m, raft::linalg::L2Norm, isRowMajor, stream);

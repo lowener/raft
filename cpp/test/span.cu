@@ -16,9 +16,9 @@
 #include "test_span.hpp"
 #include <gtest/gtest.h>
 #include <numeric>  // iota
-#include <raft/core/cudart_utils.hpp>
-#include <raft/core/span.hpp>
-#include <raft/cuda_utils.cuh>
+#include <raft/core/device_span.hpp>
+#include <raft/util/cuda_utils.cuh>
+#include <raft/util/cudart_utils.hpp>
 
 #include <thrust/copy.h>
 #include <thrust/device_vector.h>
@@ -131,7 +131,7 @@ struct TestEqual {
 
 TEST(GPUSpan, WithTrust)
 {
-  // Not adviced to initialize span with host_vector, since h_vec.data() is
+  // Not advised to initialize span with host_vector, since h_vec.data() is
   // a host function.
   thrust::host_vector<float> h_vec(16);
   std::iota(h_vec.begin(), h_vec.end(), 0);
