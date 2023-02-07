@@ -232,7 +232,7 @@ struct index : ann::index {
       veclen_(calculate_veclen(dim)),
       metric_(metric),
       adaptive_centers_(adaptive_centers),
-      data_(make_device_mdarray<T>(handle, make_extents<IdxT>(0, dim))),
+      data_(n_lists),
       indices_(make_device_mdarray<IdxT>(handle, make_extents<IdxT>(0))),
       list_sizes_(make_device_mdarray<uint32_t>(handle, make_extents<uint32_t>(n_lists))),
       list_offsets_(make_device_mdarray<IdxT>(handle, make_extents<uint32_t>(n_lists + 1))),
@@ -252,10 +252,46 @@ struct index : ann::index {
    * Replace the content of the index with new uninitialized mdarrays to hold the indicated amount
    * of data.
    */
-  void allocate(raft::device_resources const& handle, IdxT index_size)
+  void resize_index(raft::device_resources const& handle, IdxT label, IdxT new_index_size)
   {
-    data_    = make_device_mdarray<T>(handle, make_extents<IdxT>(index_size, dim()));
-    indices_ = make_device_mdarray<IdxT>(handle, make_extents<IdxT>(index_size));
+    RAFT_EXPECTS(label < data_.size(), "label is larger than cluster size");
+    auto* old_index = data_[label];
+    if (old_index->extent(0) < new_index_size) {
+      auto old_size = old_index->extent(0);
+      auto new_index = make_device_mdarray<T>(handle, make_extents<IdxT>(new_index_size, dim()));
+      raft::copy(new_index.data_handle(), old_index->data_handle(), old_index.size(), handle.get_stream());
+    }
+    data_[curr_index]    = make_device_mdarray<T>(handle, make_extents<IdxT>(index_sizes[curr_index], dim()));
+      total_index_size += index_sizes[curr_index];
+    }
+    indices_ = make_device_mdarray<IdxT>(handle, make_extents<IdxT>(total_index_size));
+
+    switch (metric_) {
+      case raft::distance::DistanceType::L2Expanded:
+      case raft::distance::DistanceType::L2SqrtExpanded:
+      case raft::distance::DistanceType::L2Unexpanded:
+      case raft::distance::DistanceType::L2SqrtUnexpanded:
+        center_norms_ = make_device_mdarray<float>(handle, make_extents<uint32_t>(n_lists()));
+        break;
+      default: center_norms_ = std::nullopt;
+    }
+
+    check_consistency();
+  }
+
+  /**
+   * Replace the content of the index with new uninitialized mdarrays to hold the indicated amount
+   * of data.
+   */
+  void extend_allocation(raft::device_resources const& handle, std::vector<IdxT> index_sizes)
+  {
+    IdxT total_index_size = 0;
+    for (IdxT curr_index = 0; curr_index < index_sizes.size(); curr_index++) {
+      if (data_[curr_index] != index_sizes[curr_index])
+        data_[curr_index]    = make_device_mdarray<T>(handle, make_extents<IdxT>(index_sizes[curr_index], dim()));
+      total_index_size += index_sizes[curr_index];
+    }
+    indices_ = make_device_mdarray<IdxT>(handle, make_extents<IdxT>(total_index_size));
 
     switch (metric_) {
       case raft::distance::DistanceType::L2Expanded:
@@ -278,7 +314,7 @@ struct index : ann::index {
   uint32_t veclen_;
   raft::distance::DistanceType metric_;
   bool adaptive_centers_;
-  device_mdarray<T, extent_2d<IdxT>, row_major> data_;
+  std::vector<std::shared_ptr<device_mdarray<T, extent_2d<IdxT>, row_major>>> data_;
   device_mdarray<IdxT, extent_1d<IdxT>, row_major> indices_;
   device_mdarray<uint32_t, extent_1d<uint32_t>, row_major> list_sizes_;
   device_mdarray<IdxT, extent_1d<uint32_t>, row_major> list_offsets_;
@@ -289,15 +325,19 @@ struct index : ann::index {
   void check_consistency()
   {
     RAFT_EXPECTS(dim() % veclen_ == 0, "dimensionality is not a multiple of the veclen");
-    RAFT_EXPECTS(data_.extent(0) == indices_.extent(0), "inconsistent index size");
-    RAFT_EXPECTS(data_.extent(1) == IdxT(centers_.extent(1)), "inconsistent data dimensionality");
     RAFT_EXPECTS(                                               //
       (centers_.extent(0) == list_sizes_.extent(0)) &&          //
         (centers_.extent(0) + 1 == list_offsets_.extent(0)) &&  //
         (!center_norms_.has_value() || centers_.extent(0) == center_norms_->extent(0)),
       "inconsistent number of lists (clusters)");
-    RAFT_EXPECTS(reinterpret_cast<size_t>(data_.data_handle()) % (veclen_ * sizeof(T)) == 0,
-                 "The data storage pointer is not aligned to the vector length");
+    IdxT index_size = 0;
+    for (const auto* cluster_data: data_) {
+      index_size += cluster_data->extent(0);
+      RAFT_EXPECTS(cluster_data->extent(1) == IdxT(centers_.extent(1)), "inconsistent data dimensionality");
+      RAFT_EXPECTS(reinterpret_cast<size_t>(cluster_data->data_handle()) % (veclen_ * sizeof(T)) == 0,
+                   "The data storage pointer is not aligned to the vector length");
+    }
+    RAFT_EXPECTS(index_size == indices_.extent(0), "inconsistent index size");
   }
 
   static auto calculate_veclen(uint32_t dim) -> uint32_t

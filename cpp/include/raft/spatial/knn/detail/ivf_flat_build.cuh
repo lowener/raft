@@ -188,7 +188,7 @@ inline auto extend(raft::device_resources const& handle,
   // Calculate new offsets
   IdxT index_size = 0;
   update_device(list_offsets_ptr, &index_size, 1, stream);
-  thrust::inclusive_scan(
+  thrust::inclusive_scan( // Cumulative sum
     rmm::exec_policy(stream),
     list_sizes_ptr,
     list_sizes_ptr + n_lists,
@@ -407,7 +407,7 @@ void save(raft::device_resources const& handle,
   if (!of) { RAFT_FAIL("Cannot open %s", filename.c_str()); }
 
   RAFT_LOG_DEBUG(
-    "Saving IVF-PQ index, size %zu, dim %u", static_cast<size_t>(index_.size()), index_.dim());
+    "Saving IVF-Flat index, size %zu, dim %u", static_cast<size_t>(index_.size()), index_.dim());
   write_scalar(of, serialization_version);
   write_scalar(of, index_.size());
   write_scalar(of, index_.dim());
