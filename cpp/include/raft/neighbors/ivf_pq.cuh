@@ -68,17 +68,17 @@ index<IdxT> build(raft::device_resources const& handle,
  * @tparam IdxT type of the indices in the source dataset
  *
  * @param[in] handle
+ * @param[inout] idx
  * @param[in] new_vectors a device matrix view to a row-major matrix [n_rows, idx.dim()]
- * @param[in] new_indices a device matrix view to a vector of indices [n_rows].
+ * @param[in] new_indices a device vector view to a vector of indices [n_rows].
  *    If the original index is empty (`idx.size() == 0`), you can pass `std::nullopt`
  *    here to imply a continuous range `[0...n_rows)`.
- * @param[inout] idx
  */
 template <typename T, typename IdxT>
 index<IdxT> extend(raft::device_resources const& handle,
+                   const index<IdxT>& idx,
                    raft::device_matrix_view<const T, IdxT, row_major> new_vectors,
-                   std::optional<raft::device_matrix_view<const IdxT, IdxT, row_major>> new_indices,
-                   const index<IdxT>& idx)
+                   std::optional<raft::device_vector_view<const IdxT, IdxT>> new_indices)
 {
   ASSERT(new_vectors.extent(1) == idx.dim(),
          "new_vectors should have the same dimension as the index");
@@ -97,23 +97,23 @@ index<IdxT> extend(raft::device_resources const& handle,
 }
 
 /**
- * @brief Extend the index with the new data.
+ * @brief Extend the index in-place with the new data.
  * *
  * @tparam T data element type
  * @tparam IdxT type of the indices in the source dataset
  *
  * @param[in] handle
+ * @param[inout] idx
  * @param[in] new_vectors a device matrix view to a row-major matrix [n_rows, idx.dim()]
- * @param[in] new_indices a device matrix view to a vector of indices [n_rows].
+ * @param[in] new_indices a device vector view to a vector of indices [n_rows].
  *    If the original index is empty (`idx.size() == 0`), you can pass `std::nullopt`
  *    here to imply a continuous range `[0...n_rows)`.
- * @param[inout] idx
  */
 template <typename T, typename IdxT>
 void extend(raft::device_resources const& handle,
+            index<IdxT>* idx,
             raft::device_matrix_view<const T, IdxT, row_major> new_vectors,
-            std::optional<raft::device_matrix_view<const IdxT, IdxT, row_major>> new_indices,
-            index<IdxT>* idx)
+            std::optional<raft::device_vector_view<const IdxT, IdxT>> new_indices)
 {
   ASSERT(new_vectors.extent(1) == idx->dim(),
          "new_vectors should have the same dimension as the index");
@@ -148,8 +148,8 @@ void extend(raft::device_resources const& handle,
  * @tparam IdxT type of the indices
  *
  * @param[in] handle
- * @param[in] params configure the search
  * @param[in] idx ivf-pq constructed index
+ * @param[in] params configure the search
  * @param[in] queries a device matrix view to a row-major matrix [n_queries, index->dim()]
  * @param[out] neighbors a device matrix view to the indices of the neighbors in the source dataset
  * [n_queries, k]
@@ -158,8 +158,8 @@ void extend(raft::device_resources const& handle,
  */
 template <typename T, typename IdxT>
 void search(raft::device_resources const& handle,
-            const search_params& params,
             const index<IdxT>& idx,
+            const search_params& params,
             raft::device_matrix_view<const T, IdxT, row_major> queries,
             raft::device_matrix_view<IdxT, IdxT, row_major> neighbors,
             raft::device_matrix_view<float, IdxT, row_major> distances)

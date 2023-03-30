@@ -90,16 +90,15 @@ auto build(raft::device_resources const& handle,
  *   // use default index parameters
  *   ivf_flat::index_params index_params;
  *   // create and fill the index from a [N, D] dataset
- *   auto index = ivf_flat::build(handle, dataset, index_params);
+ *   auto index = ivf_flat::build(handle, index_params, dataset);
  *   // use default search parameters
  *   ivf_flat::search_params search_params;
  *   // search K nearest neighbours for each of the N queries
- *   ivf_flat::search(handle, index, queries, out_inds, out_dists, search_params, k);
+ *   ivf_flat::search(handle, index, search_params, queries, out_inds, out_dists);
  * @endcode
  *
  * @tparam value_t data element type
  * @tparam idx_t type of the indices in the source dataset
- * @tparam int_t precision / type of integral arguments
  *
  * @param[in] handle
  * @param[in] params configure the index building
@@ -144,8 +143,6 @@ auto build(raft::device_resources const& handle,
  *
  * @tparam value_t data element type
  * @tparam idx_t type of the indices in the source dataset
- * @tparam int_t precision / type of integral arguments
- * @tparam matrix_idx_t matrix indexing type
  *
  * @param[in] handle
  * @param[in] params configure the index building
@@ -230,7 +227,7 @@ auto extend(raft::device_resources const& handle,
  *   index_params.add_data_on_build = false;      // don't populate index on build
  *   index_params.kmeans_trainset_fraction = 1.0; // use whole dataset for kmeans training
  *   // train the index from a [N, D] dataset
- *   auto index_empty = ivf_flat::build(handle, dataset, index_params, dataset);
+ *   auto index_empty = ivf_flat::build(handle, index_params, dataset);
  *   // fill the index with the data
  *   auto index = ivf_flat::extend(handle, index_empty, dataset);
  * @endcode
@@ -239,19 +236,19 @@ auto extend(raft::device_resources const& handle,
  * @tparam idx_t type of the indices in the source dataset
  *
  * @param[in] handle
+ * @param[in] orig_index original index
  * @param[in] new_vectors raft::device_matrix_view to a row-major matrix [n_rows, index.dim()]
  * @param[in] new_indices optional raft::device_matrix_view to a vector of indices [n_rows].
  *    If the original index is empty (`orig_index.size() == 0`), you can pass `std::nullopt`
  *    here to imply a continuous range `[0...n_rows)`.
- * @param[in] orig_index original index
  *
  * @return the constructed extended ivf-flat index
  */
 template <typename value_t, typename idx_t>
 auto extend(raft::device_resources const& handle,
+            const index<value_t, idx_t>& orig_index,
             raft::device_matrix_view<const value_t, idx_t, row_major> new_vectors,
-            std::optional<raft::device_vector_view<const idx_t, idx_t>> new_indices,
-            const index<value_t, idx_t>& orig_index) -> index<value_t, idx_t>
+            std::optional<raft::device_vector_view<const idx_t, idx_t>> new_indices) -> index<value_t, idx_t>
 {
   return extend<value_t, idx_t>(
     handle,
@@ -317,24 +314,24 @@ void extend(raft::device_resources const& handle,
  *   auto index_empty = ivf_flat::build(handle, dataset, index_params, dataset);
  *   // fill the index with the data
  *   std::optional<raft::device_vector_view<const idx_t, idx_t>> no_op = std::nullopt;
- *   ivf_flat::extend(handle, dataset, no_opt, &index_empty);
+ *   ivf_flat::extend(handle, &index_empty, dataset, no_opt);
  * @endcode
  *
  * @tparam value_t data element type
  * @tparam idx_t type of the indices in the source dataset
  *
  * @param[in] handle
+ * @param[inout] index pointer to index, to be overwritten in-place
  * @param[in] new_vectors raft::device_matrix_view to a row-major matrix [n_rows, index.dim()]
- * @param[in] new_indices optional raft::device_matrix_view to a vector of indices [n_rows].
+ * @param[in] new_indices optional raft::device_vector_view to a vector of indices [n_rows].
  *    If the original index is empty (`orig_index.size() == 0`), you can pass `std::nullopt`
  *    here to imply a continuous range `[0...n_rows)`.
- * @param[inout] index pointer to index, to be overwritten in-place
  */
 template <typename value_t, typename idx_t>
 void extend(raft::device_resources const& handle,
+            index<value_t, idx_t>* index,
             raft::device_matrix_view<const value_t, idx_t, row_major> new_vectors,
-            std::optional<raft::device_vector_view<const idx_t, idx_t>> new_indices,
-            index<value_t, idx_t>* index)
+            std::optional<raft::device_vector_view<const idx_t, idx_t>> new_indices)
 {
   extend(handle,
          index,
@@ -422,19 +419,18 @@ void search(raft::device_resources const& handle,
  *   ivf_flat::search_params search_params;
  *   // Use the same allocator across multiple searches to reduce the number of
  *   // cuda memory allocations
- *   ivf_flat::search(handle, index, queries1, out_inds1, out_dists1, search_params, K);
- *   ivf_flat::search(handle, index, queries2, out_inds2, out_dists2, search_params, K);
- *   ivf_flat::search(handle, index, queries3, out_inds3, out_dists3, search_params, K);
+ *   ivf_flat::search(handle, index, search_params, queries1, out_inds1, out_dists1);
+ *   ivf_flat::search(handle, index, search_params, queries2, out_inds2, out_dists2);
+ *   ivf_flat::search(handle, index, search_params, queries3, out_inds3, out_dists3);
  *   ...
  * @endcode
  *
  * @tparam value_t data element type
  * @tparam idx_t type of the indices
- * @tparam int_t precision / type of integral arguments
  *
  * @param[in] handle
- * @param[in] params configure the search
  * @param[in] index ivf-flat constructed index
+ * @param[in] params configure the search
  * @param[in] queries a device pointer to a row-major matrix [n_queries, index->dim()]
  * @param[out] neighbors a device pointer to the indices of the neighbors in the source dataset
  * [n_queries, k]
@@ -442,8 +438,8 @@ void search(raft::device_resources const& handle,
  */
 template <typename value_t, typename idx_t>
 void search(raft::device_resources const& handle,
-            const search_params& params,
             const index<value_t, idx_t>& index,
+            const search_params& params,
             raft::device_matrix_view<const value_t, idx_t, row_major> queries,
             raft::device_matrix_view<idx_t, idx_t, row_major> neighbors,
             raft::device_matrix_view<float, idx_t, row_major> distances)
