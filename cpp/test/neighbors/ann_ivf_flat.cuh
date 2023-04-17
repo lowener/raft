@@ -306,6 +306,10 @@ const std::vector<AnnIvfFlatInputs<int64_t>> inputs = {
   {1000, 10000, 8, 16, 40, 1024, raft::distance::DistanceType::InnerProduct, true},
   {1000, 10000, 5, 16, 40, 1024, raft::distance::DistanceType::L2SqrtExpanded, false},
   {1000, 10000, 8, 16, 40, 1024, raft::distance::DistanceType::L2SqrtExpanded, true},
+  {1000, 10000, 3, 16, 40, 1024, raft::distance::DistanceType::CosineExpanded, false},
+  {1000, 10000, 4, 16, 40, 1024, raft::distance::DistanceType::CosineExpanded, true},
+  {1000, 10000, 5, 16, 40, 1024, raft::distance::DistanceType::CorrelationExpanded, true},
+  {1000, 10000, 6, 16, 40, 1024, raft::distance::DistanceType::CorrelationExpanded, false},
 
   // test dims that do not fit into kernel shared memory limits
   {1000, 10000, 2048, 16, 40, 1024, raft::distance::DistanceType::L2Expanded, false},
@@ -315,6 +319,8 @@ const std::vector<AnnIvfFlatInputs<int64_t>> inputs = {
   {1000, 10000, 2052, 16, 40, 1024, raft::distance::DistanceType::InnerProduct, false},
   {1000, 10000, 2053, 16, 40, 1024, raft::distance::DistanceType::L2Expanded, true},
   {1000, 10000, 2056, 16, 40, 1024, raft::distance::DistanceType::L2Expanded, true},
+  {1000, 10000, 2051, 16, 40, 1024, raft::distance::DistanceType::CosineExpanded, true},
+  {1000, 10000, 2052, 16, 40, 1024, raft::distance::DistanceType::CorrelationExpanded, true},
 
   // various random combinations
   {1000, 10000, 16, 10, 40, 1024, raft::distance::DistanceType::L2Expanded, false},
@@ -332,8 +338,13 @@ const std::vector<AnnIvfFlatInputs<int64_t>> inputs = {
   {20, 100000, 16, 10, 20, 1024, raft::distance::DistanceType::InnerProduct, true},
   {1000, 100000, 16, 10, 20, 1024, raft::distance::DistanceType::InnerProduct, false},
   {10000, 131072, 8, 10, 50, 1024, raft::distance::DistanceType::InnerProduct, true},
-
   {1000, 10000, 4096, 20, 50, 1024, raft::distance::DistanceType::InnerProduct, false},
+
+  {1000, 10000, 16, 10, 70, 1024, raft::distance::DistanceType::CosineExpanded, false},
+  {100, 10000, 16, 10, 20, 512, raft::distance::DistanceType::CosineExpanded, true},
+  {10000, 131072, 8, 10, 50, 1024, raft::distance::DistanceType::CorrelationExpanded, false},
+  {100, 10000, 16, 10, 20, 512, raft::distance::DistanceType::CorrelationExpanded, true},
+
 
   // test splitting the big query batches  (> max gridDim.y) into smaller batches
   {100000, 1024, 32, 10, 64, 64, raft::distance::DistanceType::InnerProduct, false},
@@ -355,6 +366,14 @@ const std::vector<AnnIvfFlatInputs<int64_t>> inputs = {
    raft::matrix::detail::select::warpsort::kMaxCapacity * 4,
    raft::matrix::detail::select::warpsort::kMaxCapacity * 4,
    raft::distance::DistanceType::InnerProduct,
-   false}};
+   false},
+   {1000,
+    10000,
+    16,
+    10,
+    raft::matrix::detail::select::warpsort::kMaxCapacity * 2,
+    raft::matrix::detail::select::warpsort::kMaxCapacity * 4,
+    raft::distance::DistanceType::CosineExpanded,
+    false}};
 
 }  // namespace raft::neighbors::ivf_flat
