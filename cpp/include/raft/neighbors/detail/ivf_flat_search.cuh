@@ -933,6 +933,14 @@ struct inner_prod_dist {
   }
 };
 
+struct cosine_post_op {
+  template <typename Type, typename... UnusedArgs>
+  RAFT_INLINE_FUNCTION auto operator()(const Type& in, UnusedArgs...) const
+  {
+    return 1 - in;
+  }
+};
+
 /** Select the distance computation function and forward the rest of the arguments. */
 template <int Capacity,
           int Veclen,
@@ -944,6 +952,16 @@ template <int Capacity,
 void launch_with_fixed_consts(raft::distance::DistanceType metric, Args&&... args)
 {
   switch (metric) {
+    case raft::distance::DistanceType::CosineExpanded:
+    case raft::distance::DistanceType::CorrelationExpanded:
+      return launch_kernel<Capacity,
+                           Veclen,
+                           Ascending,
+                           T,
+                           AccT,
+                           IdxT,
+                           inner_prod_dist<Veclen, T, AccT>,
+                           cosine_post_op>({}, {}, std::forward<Args>(args)...);
     case raft::distance::DistanceType::L2Expanded:
     case raft::distance::DistanceType::L2Unexpanded:
       return launch_kernel<Capacity,
@@ -1116,6 +1134,22 @@ void search_impl(raft::device_resources const& handle,
   // The topk index of candidate vectors from each cluster(list)
   rmm::device_uvector<IdxT> refined_indices_dev(n_queries * n_probes * k, stream, search_mr);
 
+  // perform preprocessing
+  std::unique_ptr<MetricProcessor<T>> query_metric_processor;
+  std::vector<std::unique_ptr<MetricProcessor<T>>> list_metric_processors(0);
+
+  if (index.metric() == DistanceType::CosineExpanded || index.metric() == DistanceType::CorrelationExpanded) {
+    query_metric_processor = create_processor<T>(index.metric(), n_queries, index.dim(), k, true, stream);
+    query_metric_processor->preprocess(queries);
+
+    list_metric_processors.resize(index.n_lists());
+    for (size_t i = 0; i < index.n_lists(); i++) {
+      list_metric_processors[i] =
+        create_processor<T>(index.metric(), index.lists()[i]->size.load(), index.dim(), k, true, stream);
+      list_metric_processors[i]->preprocess(index.data_ptrs()[i]);
+    }
+  }
+
   size_t float_query_size;
   if constexpr (std::is_integral_v<T>) {
     float_query_size = n_queries * index.dim();
@@ -1249,6 +1283,14 @@ void search_impl(raft::device_resources const& handle,
                                          select_min,
                                          stream,
                                          search_mr);
+  }
+
+  // Postprocess / revert metric processors
+  if (index.metric() == DistanceType::CosineExpanded || index.metric() == DistanceType::CorrelationExpanded) {
+    query_metric_processor->revert(queries);
+    for (size_t i = 0; i < index.n_lists(); i++) {
+      list_metric_processors[i]->revert(index.data_ptrs()[i], );
+    }
   }
 }
 

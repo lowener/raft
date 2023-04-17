@@ -35,7 +35,11 @@ namespace raft::neighbors::ivf_flat {
  * NB: Currently, the following distance metrics are supported:
  * - L2Expanded
  * - L2Unexpanded
+ * - L2SqrtExpanded
+ * - L2SqrtUnexpanded
  * - InnerProduct
+ * - CosineExpanded
+ * - CorrelationExpanded
  *
  * Usage example:
  * @code{.cpp}
@@ -82,7 +86,11 @@ auto build(raft::device_resources const& handle,
  * NB: Currently, the following distance metrics are supported:
  * - L2Expanded
  * - L2Unexpanded
+ * - L2SqrtExpanded
+ * - L2SqrtUnexpanded
  * - InnerProduct
+ * - CosineExpanded
+ * - CorrelationExpanded
  *
  * Usage example:
  * @code{.cpp}
@@ -126,7 +134,11 @@ auto build(raft::device_resources const& handle,
  * NB: Currently, the following distance metrics are supported:
  * - L2Expanded
  * - L2Unexpanded
+ * - L2SqrtExpanded
+ * - L2SqrtUnexpanded
  * - InnerProduct
+ * - CosineExpanded
+ * - CorrelationExpanded
  *
  * Usage example:
  * @code{.cpp}
