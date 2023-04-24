@@ -953,7 +953,6 @@ void launch_with_fixed_consts(raft::distance::DistanceType metric, Args&&... arg
 {
   switch (metric) {
     case raft::distance::DistanceType::CosineExpanded:
-    case raft::distance::DistanceType::CorrelationExpanded:
       return launch_kernel<Capacity,
                            Veclen,
                            Ascending,
@@ -1138,7 +1137,7 @@ void search_impl(raft::device_resources const& handle,
   std::unique_ptr<MetricProcessor<T>> query_metric_processor;
   std::vector<std::unique_ptr<MetricProcessor<T>>> list_metric_processors(0);
 
-  if (index.metric() == DistanceType::CosineExpanded || index.metric() == DistanceType::CorrelationExpanded) {
+  if (index.metric() == DistanceType::CosineExpanded) {
     query_metric_processor = create_processor<T>(index.metric(), n_queries, index.dim(), k, true, stream);
     query_metric_processor->preprocess(queries);
 
@@ -1171,6 +1170,16 @@ void search_impl(raft::device_resources const& handle,
 
   // todo(lsugy): raft distance? (if performance is similar/better than gemm)
   switch (index.metric()) {
+    case raft::distance::DistanceType::CosineExpanded:{
+      raft::linalg::rowNorm(query_norm_dev.data(),
+                            converted_queries_ptr,
+                            static_cast<IdxT>(index.dim()),
+                            static_cast<IdxT>(n_queries),
+                            raft::linalg::L2Norm,
+                            true,
+                            stream,
+                            raft::sqrt_op{});
+    }
     case raft::distance::DistanceType::L2Expanded:
     case raft::distance::DistanceType::L2SqrtExpanded: {
       alpha = -2.0f;
@@ -1286,7 +1295,7 @@ void search_impl(raft::device_resources const& handle,
   }
 
   // Postprocess / revert metric processors
-  if (index.metric() == DistanceType::CosineExpanded || index.metric() == DistanceType::CorrelationExpanded) {
+  if (index.metric() == DistanceType::CosineExpanded) {
     query_metric_processor->revert(queries);
     for (size_t i = 0; i < index.n_lists(); i++) {
       list_metric_processors[i]->revert(index.data_ptrs()[i], );
