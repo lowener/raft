@@ -29,6 +29,7 @@
 #include <raft/matrix/detail/select_warpsort.cuh>
 #include <raft/neighbors/ivf_flat_types.hpp>
 #include <raft/spatial/knn/detail/ann_utils.cuh>
+#include <raft/spatial/knn/detail/processing.cuh>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/device_loads_stores.cuh>
 #include <raft/util/integer_utils.hpp>
@@ -1134,8 +1135,8 @@ void search_impl(raft::device_resources const& handle,
   rmm::device_uvector<IdxT> refined_indices_dev(n_queries * n_probes * k, stream, search_mr);
 
   // perform preprocessing
-  std::unique_ptr<MetricProcessor<T>> query_metric_processor;
-  std::vector<std::unique_ptr<MetricProcessor<T>>> list_metric_processors(0);
+  std::unique_ptr<raft::spatial::knn::MetricProcessor<T>> query_metric_processor;
+  std::vector<std::unique_ptr<raft::spatial::knn::MetricProcessor<T>>> list_metric_processors(0);
 
   if (index.metric() == DistanceType::CosineExpanded) {
     query_metric_processor = create_processor<T>(index.metric(), n_queries, index.dim(), k, true, stream);
@@ -1144,7 +1145,7 @@ void search_impl(raft::device_resources const& handle,
     list_metric_processors.resize(index.n_lists());
     for (size_t i = 0; i < index.n_lists(); i++) {
       list_metric_processors[i] =
-        create_processor<T>(index.metric(), index.lists()[i]->size.load(), index.dim(), k, true, stream);
+        raft::spatial::knn::create_processor<T>(index.metric(), index.lists()[i]->size.load(), index.dim(), k, true, stream);
       list_metric_processors[i]->preprocess(index.data_ptrs()[i]);
     }
   }
@@ -1298,7 +1299,7 @@ void search_impl(raft::device_resources const& handle,
   if (index.metric() == DistanceType::CosineExpanded) {
     query_metric_processor->revert(queries);
     for (size_t i = 0; i < index.n_lists(); i++) {
-      list_metric_processors[i]->revert(index.data_ptrs()[i], );
+      list_metric_processors[i]->revert(index.data_ptrs()[i]);
     }
   }
 }
