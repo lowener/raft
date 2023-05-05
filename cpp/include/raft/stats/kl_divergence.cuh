@@ -65,8 +65,6 @@ value_t kl_divergence(raft::device_resources const& handle,
                       raft::device_vector_view<const value_t, idx_t> candidatePDF)
 {
   RAFT_EXPECTS(modelPDF.size() == candidatePDF.size(), "Size mismatch");
-  RAFT_EXPECTS(modelPDF.is_exhaustive(), "modelPDF must be contiguous");
-  RAFT_EXPECTS(candidatePDF.is_exhaustive(), "candidatePDF must be contiguous");
   return detail::kl_divergence(
     modelPDF.data_handle(), candidatePDF.data_handle(), modelPDF.extent(0), handle.get_stream());
 }

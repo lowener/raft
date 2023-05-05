@@ -97,9 +97,6 @@ void cov(raft::device_resources const& handle,
     "Data layout not supported");
   RAFT_EXPECTS(data.extent(1) == covar.extent(0) && data.extent(1) == covar.extent(1),
                "Size mismatch");
-  RAFT_EXPECTS(data.is_exhaustive(), "data must be contiguous");
-  RAFT_EXPECTS(covar.is_exhaustive(), "covar must be contiguous");
-  RAFT_EXPECTS(mu.is_exhaustive(), "mu must be contiguous");
 
   detail::cov(handle,
               covar.data_handle(),

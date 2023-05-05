@@ -69,7 +69,6 @@ double entropy(raft::device_resources const& handle,
                const value_t lower_label_range,
                const value_t upper_label_range)
 {
-  RAFT_EXPECTS(cluster_array.is_exhaustive(), "cluster_array must be contiguous");
   return detail::entropy(cluster_array.data_handle(),
                          cluster_array.extent(0),
                          lower_label_range,

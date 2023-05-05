@@ -99,8 +99,6 @@ void information_criterion_batched(raft::device_resources const& handle,
                                    idx_t n_samples)
 {
   RAFT_EXPECTS(d_ic.size() == d_loglikelihood.size(), "Size mismatch");
-  RAFT_EXPECTS(d_ic.is_exhaustive(), "d_ic must be contiguous");
-  RAFT_EXPECTS(d_loglikelihood.is_exhaustive(), "d_loglikelihood must be contiguous");
   batched::detail::information_criterion(d_ic.data_handle(),
                                          d_loglikelihood.data_handle(),
                                          ic_type,

@@ -60,8 +60,6 @@ float accuracy(raft::device_resources const& handle,
                raft::device_vector_view<const value_t, idx_t> ref_predictions)
 {
   RAFT_EXPECTS(predictions.size() == ref_predictions.size(), "Size mismatch");
-  RAFT_EXPECTS(predictions.is_exhaustive(), "predictions must be contiguous");
-  RAFT_EXPECTS(ref_predictions.is_exhaustive(), "ref_predictions must be contiguous");
 
   return detail::accuracy_score(predictions.data_handle(),
                                 ref_predictions.data_handle(),

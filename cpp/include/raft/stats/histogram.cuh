@@ -100,8 +100,6 @@ void histogram(raft::device_resources const& handle,
   RAFT_EXPECTS(std::is_integral_v<idx_t> && data.extent(0) <= std::numeric_limits<int>::max(),
                "Index type not supported");
   RAFT_EXPECTS(bins.extent(1) == data.extent(1), "Size mismatch");
-  RAFT_EXPECTS(bins.is_exhaustive(), "bins must be contiguous");
-  RAFT_EXPECTS(data.is_exhaustive(), "data must be contiguous");
   detail::histogram<value_t, idx_t, binner_op>(type,
                                                bins.data_handle(),
                                                bins.extent(0),

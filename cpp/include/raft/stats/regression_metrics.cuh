@@ -82,8 +82,6 @@ void regression_metrics(raft::device_resources const& handle,
 {
   RAFT_EXPECTS(predictions.extent(0) == ref_predictions.extent(0),
                "Size mismatch between predictions and ref_predictions");
-  RAFT_EXPECTS(predictions.is_exhaustive(), "predictions must be contiguous");
-  RAFT_EXPECTS(ref_predictions.is_exhaustive(), "ref_predictions must be contiguous");
   RAFT_EXPECTS(mean_abs_error.data_handle() != nullptr, "mean_abs_error view must not be empty");
   RAFT_EXPECTS(mean_squared_error.data_handle() != nullptr,
                "mean_squared_error view must not be empty");

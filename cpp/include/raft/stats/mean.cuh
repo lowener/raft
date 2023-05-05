@@ -79,8 +79,6 @@ void mean(raft::device_resources const& handle,
     std::is_same_v<layout_t, raft::row_major> || std::is_same_v<layout_t, raft::col_major>,
     "Data layout not supported");
   RAFT_EXPECTS(data.extent(1) == mu.extent(0), "Size mismatch between data and mu");
-  RAFT_EXPECTS(mu.is_exhaustive(), "mu must be contiguous");
-  RAFT_EXPECTS(data.is_exhaustive(), "data must be contiguous");
   detail::mean(mu.data_handle(),
                data.data_handle(),
                data.extent(1),

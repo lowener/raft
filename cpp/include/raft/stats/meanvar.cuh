@@ -91,9 +91,6 @@ void meanvar(raft::device_resources const& handle,
     "Data layout not supported");
   RAFT_EXPECTS(data.extent(1) == var.extent(0), "Size mismatch between data and var");
   RAFT_EXPECTS(mean.size() == var.size(), "Size mismatch between mean and var");
-  RAFT_EXPECTS(mean.is_exhaustive(), "mean must be contiguous");
-  RAFT_EXPECTS(var.is_exhaustive(), "var must be contiguous");
-  RAFT_EXPECTS(data.is_exhaustive(), "data must be contiguous");
   detail::meanvar(mean.data_handle(),
                   var.data_handle(),
                   data.data_handle(),

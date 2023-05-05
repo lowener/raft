@@ -142,7 +142,6 @@ void get_input_class_cardinality(raft::device_resources const& handle,
  * @tparam value_t label type
  * @tparam out_t output matrix type
  * @tparam idx_t Index type of matrix extent.
- * @tparam layout_t Layout type of the input data.
  * @tparam opt_min_label_t std::optional<value_t> @c opt_min_label
  * @tparam opt_max_label_t std::optional<value_t> @c opt_max_label
  * @param[in]  handle: the raft handle.
@@ -155,23 +154,19 @@ void get_input_class_cardinality(raft::device_resources const& handle,
 template <typename value_t,
           typename out_t,
           typename idx_t,
-          typename layout_t,
           typename opt_min_label_t,
           typename opt_max_label_t>
 void contingency_matrix(raft::device_resources const& handle,
                         raft::device_vector_view<const value_t, idx_t> ground_truth,
                         raft::device_vector_view<const value_t, idx_t> predicted_label,
-                        raft::device_matrix_view<out_t, idx_t, layout_t> out_mat,
+                        raft::device_matrix_view<out_t, idx_t, raft::row_major> out_mat,
                         opt_min_label_t&& opt_min_label,
                         opt_max_label_t&& opt_max_label)
 {
+  RAFT_EXPECTS(ground_truth.size() == predicted_label.size(), "Size mismatch");
+
   std::optional<value_t> min_label = std::forward<opt_min_label_t>(opt_min_label);
   std::optional<value_t> max_label = std::forward<opt_max_label_t>(opt_max_label);
-
-  RAFT_EXPECTS(ground_truth.size() == predicted_label.size(), "Size mismatch");
-  RAFT_EXPECTS(ground_truth.is_exhaustive(), "ground_truth must be contiguous");
-  RAFT_EXPECTS(predicted_label.is_exhaustive(), "predicted_label must be contiguous");
-  RAFT_EXPECTS(out_mat.is_exhaustive(), "out_mat must be contiguous");
 
   value_t min_label_value = std::numeric_limits<value_t>::max();
   value_t max_label_value = std::numeric_limits<value_t>::max();

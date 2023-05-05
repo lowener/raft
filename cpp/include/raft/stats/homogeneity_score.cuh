@@ -75,8 +75,6 @@ double homogeneity_score(raft::device_resources const& handle,
                          value_t upper_label_range)
 {
   RAFT_EXPECTS(truth_cluster_array.size() == pred_cluster_array.size(), "Size mismatch");
-  RAFT_EXPECTS(truth_cluster_array.is_exhaustive(), "truth_cluster_array must be contiguous");
-  RAFT_EXPECTS(pred_cluster_array.is_exhaustive(), "pred_cluster_array must be contiguous");
   return detail::homogeneity_score(truth_cluster_array.data_handle(),
                                    pred_cluster_array.data_handle(),
                                    truth_cluster_array.extent(0),

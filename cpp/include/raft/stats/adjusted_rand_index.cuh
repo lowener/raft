@@ -71,8 +71,6 @@ double adjusted_rand_index(raft::device_resources const& handle,
                            raft::device_vector_view<const value_t, idx_t> second_cluster_array)
 {
   RAFT_EXPECTS(first_cluster_array.size() == second_cluster_array.size(), "Size mismatch");
-  RAFT_EXPECTS(first_cluster_array.is_exhaustive(), "first_cluster_array must be contiguous");
-  RAFT_EXPECTS(second_cluster_array.is_exhaustive(), "second_cluster_array must be contiguous");
 
   return detail::compute_adjusted_rand_index<value_t, math_t>(first_cluster_array.data_handle(),
                                                               second_cluster_array.data_handle(),

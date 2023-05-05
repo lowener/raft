@@ -77,8 +77,6 @@ double v_measure(raft::device_resources const& handle,
 {
   RAFT_EXPECTS(truth_cluster_array.extent(0) == pred_cluster_array.extent(0),
                "Size mismatch between truth_cluster_array and pred_cluster_array");
-  RAFT_EXPECTS(truth_cluster_array.is_exhaustive(), "truth_cluster_array must be contiguous");
-  RAFT_EXPECTS(pred_cluster_array.is_exhaustive(), "pred_cluster_array must be contiguous");
 
   return detail::v_measure(truth_cluster_array.data_handle(),
                            pred_cluster_array.data_handle(),

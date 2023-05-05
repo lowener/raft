@@ -88,13 +88,11 @@ value_t cluster_dispersion(
   const idx_t n_points)
 {
   RAFT_EXPECTS(cluster_sizes.extent(0) == centroids.extent(0), "Size mismatch");
-  RAFT_EXPECTS(cluster_sizes.is_exhaustive(), "cluster_sizes must be contiguous");
 
   value_t* global_centroid_ptr = nullptr;
   if (global_centroid.has_value()) {
     RAFT_EXPECTS(global_centroid.value().extent(0) == centroids.extent(1),
                  "Size mismatch between global_centroid and centroids");
-    RAFT_EXPECTS(global_centroid.value().is_exhaustive(), "global_centroid must be contiguous");
     global_centroid_ptr = global_centroid.value().data_handle();
   }
   return detail::dispersion<value_t, idx_t>(centroids.data_handle(),

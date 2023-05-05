@@ -61,8 +61,6 @@ double rand_index(raft::device_resources const& handle,
 {
   RAFT_EXPECTS(first_cluster_array.extent(0) == second_cluster_array.extent(0),
                "Size mismatch between first_cluster_array and second_cluster_array");
-  RAFT_EXPECTS(first_cluster_array.is_exhaustive(), "first_cluster_array must be contiguous");
-  RAFT_EXPECTS(second_cluster_array.is_exhaustive(), "second_cluster_array must be contiguous");
   return detail::compute_rand_index(first_cluster_array.data_handle(),
                                     second_cluster_array.data_handle(),
                                     second_cluster_array.extent(0),
