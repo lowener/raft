@@ -337,6 +337,7 @@ struct index : ann::index {
   raft::distance::DistanceType metric_;
   raft::device_matrix<T, int64_t, row_major> dataset_;
   raft::device_matrix<IdxT, int64_t, row_major> graph_;
+  raft::device_vector<IdxT, int64_t> blacklist_;
   raft::device_matrix_view<const T, int64_t, layout_stride> dataset_view_;
   raft::device_matrix_view<const IdxT, int64_t, row_major> graph_view_;
 };

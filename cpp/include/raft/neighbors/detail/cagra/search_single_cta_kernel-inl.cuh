@@ -482,7 +482,9 @@ __launch_bounds__(BLOCK_SIZE, BLOCK_COUNT) __global__
                      std::uint32_t* const num_executed_iterations,  // [num_queries]
                      const std::uint32_t hash_bitlen,
                      const std::uint32_t small_hash_bitlen,
-                     const std::uint32_t small_hash_reset_interval)
+                     const std::uint32_t small_hash_reset_interval,
+                     INDEX_T* const blacklist_ptr,        // [blacklist_len]
+                     const std::uint32_t blacklist_len)
 {
   using LOAD_T        = device::LOAD_128BIT_T;
   const auto query_id = blockIdx.y;
@@ -549,6 +551,8 @@ __launch_bounds__(BLOCK_SIZE, BLOCK_COUNT) __global__
     local_visited_hashmap_ptr = visited_hashmap_ptr + (hashmap::get_size(hash_bitlen) * query_id);
   }
   hashmap::init<0, BLOCK_SIZE>(local_visited_hashmap_ptr, hash_bitlen);
+  __syncthreads();
+  hashmap::insert_batch<0, BLOCK_SIZE>(local_visited_hashmap_ptr, hash_bitlen, blacklist_ptr, blacklist_len);
   __syncthreads();
   _CLK_REC(clk_init);
 
@@ -850,7 +854,9 @@ void select_and_run(  // raft::resources const& res,
   size_t itopk_size,
   size_t search_width,
   size_t min_iterations,
-  size_t max_iterations,
+  size_t max_iterations,,
+  INDEX_T* const blacklist_ptr,        // [blacklist_len]
+  const std::uint32_t blacklist_len
   cudaStream_t stream)
 {
   auto kernel = search_kernel_config<TEAM_SIZE, MAX_DATASET_DIM, DATA_T, INDEX_T, DISTANCE_T>::
@@ -883,7 +889,9 @@ void select_and_run(  // raft::resources const& res,
                                                          num_executed_iterations,
                                                          hash_bitlen,
                                                          small_hash_bitlen,
-                                                         small_hash_reset_interval);
+                                                         small_hash_reset_interval,
+                                                         blacklist_ptr,
+                                                         blacklist_len);
   RAFT_CUDA_TRY(cudaPeekAtLastError());
 }
 }  // namespace single_cta_search

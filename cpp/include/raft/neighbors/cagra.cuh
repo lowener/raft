@@ -315,6 +315,53 @@ void search(raft::resources const& res,
   cagra::detail::search_main<T, internal_IdxT, IdxT>(
     res, params, idx, queries_internal, neighbors_internal, distances_internal);
 }
+
+
+/**
+ * @brief Search ANN using the constructed index.
+ *
+ * See the [cagra::build](#cagra::build) documentation for a usage example.
+ *
+ * @tparam T data element type
+ * @tparam IdxT type of the indices
+ *
+ * @param[in] res raft resources
+ * @param[in] params configure the search
+ * @param[in] idx cagra index
+ * @param[in] queries a device matrix view to a row-major matrix [n_queries, index->dim()]
+ * @param[out] neighbors a device matrix view to the indices of the neighbors in the source dataset
+ * [n_queries, k]
+ * @param[out] distances a device matrix view to the distances to the selected neighbors [n_queries,
+ * k]
+ */
+ template <typename T, typename IdxT>
+ void remove(raft::resources const& res,
+             const search_params& params,
+             const index<T, IdxT>& idx,
+             raft::device_vector_view<IdxT, int64_t> remove_ids)
+{
+  idx.blacklist_ = raft::make_device_matrix<const T, int64_t>(res, remove_ids.extend(0));
+  raft::copy(
+    remove_ids.data_handle(),
+    idx.blacklist_.data_handle(),
+    remove_ids.extent(0),
+    resource::get_cuda_stream(res));
+  /*
+  //TODO: Make the remove incremental
+  auto total_blacklist_len = idx.blacklist_.extent(0) + remove_ids.extend(0);
+  auto new_blacklist_ = raft::make_device_matrix<const T, int64_t>(res, total_blacklist_len);
+
+  raft::copy(
+    new_blacklist_.data_handle(),
+    idx.blacklist_.data_handle(),
+    idx.blacklist_.extent(0),
+    resource::get_cuda_stream(res));
+  raft::copy(
+    remove_ids.data_handle(),
+    idx.blacklist_.data_handle() + idx.blacklist_.extent(0),
+    remove_ids.extent(0),
+    resource::get_cuda_stream(res));*/
+}
 /** @} */  // end group cagra
 
 }  // namespace raft::neighbors::cagra

@@ -73,6 +73,30 @@ _RAFT_DEVICE inline uint32_t insert(IdxT* const table, const uint32_t bitlen, co
   return 0;
 }
 
+template <unsigned FIRST_TID, unsigned LAST_TID, class IdxT>
+_RAFT_DEVICE inline uint32_t insert_batch(IdxT* const table, const uint32_t bitlen, const IdxT* key, const uint32_t key_len)
+{
+  if ((FIRST_TID > 0 && threadIdx.x < FIRST_TID) || threadIdx.x >= LAST_TID) return;
+  // Open addressing is used for collision resolution
+  const uint32_t size     = get_size(bitlen);
+  const uint32_t bit_mask = size - 1;
+  // Linear probing
+  constexpr uint32_t stride = 1;
+  for (unsigned j = threadIdx.x - FIRST_TID; j < key_len; j += LAST_TID - FIRST_TID) {
+    IdxT index                = (key[j] ^ (key[j] >> bitlen)) & bit_mask;
+    for (unsigned i = 0; i < size; i++) {
+      const IdxT old = atomicCAS(&table[index], ~static_cast<IdxT>(0), key[j]);
+      if (old == ~static_cast<IdxT>(0)) {
+        return 1;
+      } else if (old == key[j]) {
+        return 0;
+      }
+      index = (index + stride) & bit_mask;
+    }
+  }
+  return 0;
+}
+
 template <unsigned TEAM_SIZE, class IdxT>
 _RAFT_DEVICE inline uint32_t insert(IdxT* const table, const uint32_t bitlen, const IdxT key)
 {

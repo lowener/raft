@@ -50,6 +50,8 @@ void select_and_run(  // raft::resources const& res,
   size_t search_width,
   size_t min_iterations,
   size_t max_iterations,
+  INDEX_T* const blacklist_ptr,        // [blacklist_len]
+  const std::uint32_t blacklist_len,
   cudaStream_t stream) RAFT_EXPLICIT;
 
 #endif  // RAFT_EXPLICIT_INSTANTIATE_ONLY
@@ -80,6 +82,8 @@ void select_and_run(  // raft::resources const& res,
     size_t search_width,                                                                        \
     size_t min_iterations,                                                                      \
     size_t max_iterations,                                                                      \
+    INDEX_T* const blacklist_ptr,                                                               \
+    const std::uint32_t blacklist_len,                                                          \
     cudaStream_t stream);
 
 instantiate_single_cta_select_and_run(32, 1024, float, uint32_t, float);

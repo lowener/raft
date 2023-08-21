@@ -152,7 +152,9 @@ __launch_bounds__(BLOCK_SIZE, BLOCK_COUNT) __global__ void search_kernel(
   const uint32_t search_width,
   const uint32_t min_iteration,
   const uint32_t max_iteration,
-  uint32_t* const num_executed_iterations /* stats */
+  uint32_t* const num_executed_iterations, /* stats */
+  INDEX_T* const blacklist_ptr,        // [blacklist_len]
+  const std::uint32_t blacklist_len
 )
 {
   assert(blockDim.x == BLOCK_SIZE);
@@ -475,6 +477,8 @@ void select_and_run(  // raft::resources const& res,
   size_t search_width,
   size_t min_iterations,
   size_t max_iterations,
+  INDEX_T* const blacklist_ptr,        // [blacklist_len]
+  const std::uint32_t blacklist_len,
   cudaStream_t stream)
 {
   auto kernel = search_kernel_config<TEAM_SIZE, MAX_DATASET_DIM, DATA_T, INDEX_T, DISTANCE_T>::
@@ -513,7 +517,9 @@ void select_and_run(  // raft::resources const& res,
                                                        search_width,
                                                        min_iterations,
                                                        max_iterations,
-                                                       num_executed_iterations);
+                                                       num_executed_iterations,
+                                                       blacklist_ptr,
+                                                       blacklist_len);
 }
 
 }  // namespace multi_cta_search
