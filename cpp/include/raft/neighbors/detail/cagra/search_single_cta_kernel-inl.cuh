@@ -440,14 +440,6 @@ __device__ inline void hashmap_restore(INDEX_T* const hashmap_ptr,
   }
 }
 
-template <class T, unsigned BLOCK_SIZE>
-__device__ inline void set_value_device(T* const ptr, const T fill, const std::uint32_t count)
-{
-  for (std::uint32_t i = threadIdx.x; i < count; i += BLOCK_SIZE) {
-    ptr[i] = fill;
-  }
-}
-
 // One query one thread block
 template <unsigned TEAM_SIZE,
           unsigned BLOCK_SIZE,
@@ -483,7 +475,7 @@ __launch_bounds__(BLOCK_SIZE, BLOCK_COUNT) __global__
                      const std::uint32_t hash_bitlen,
                      const std::uint32_t small_hash_bitlen,
                      const std::uint32_t small_hash_reset_interval,
-                     INDEX_T* const blacklist_ptr,        // [blacklist_len]
+                     INDEX_T* const blacklist_ptr,  // [blacklist_len]
                      const std::uint32_t blacklist_len)
 {
   using LOAD_T        = device::LOAD_128BIT_T;
@@ -551,8 +543,8 @@ __launch_bounds__(BLOCK_SIZE, BLOCK_COUNT) __global__
     local_visited_hashmap_ptr = visited_hashmap_ptr + (hashmap::get_size(hash_bitlen) * query_id);
   }
   hashmap::init<0, BLOCK_SIZE>(local_visited_hashmap_ptr, hash_bitlen);
-  __syncthreads();
-  hashmap::insert_batch<0, BLOCK_SIZE>(local_visited_hashmap_ptr, hash_bitlen, blacklist_ptr, blacklist_len);
+  hashmap::insert_batch<0, BLOCK_SIZE>(
+    local_visited_hashmap_ptr, hash_bitlen, blacklist_ptr, blacklist_len);
   __syncthreads();
   _CLK_REC(clk_init);
 
@@ -613,6 +605,8 @@ __launch_bounds__(BLOCK_SIZE, BLOCK_COUNT) __global__
             hashmap::init<32, BLOCK_SIZE>(local_visited_hashmap_ptr, hash_bitlen);
           }
         }
+        hashmap::insert_batch<0, BLOCK_SIZE>(
+          local_visited_hashmap_ptr, hash_bitlen, blacklist_ptr, blacklist_len);
         _CLK_REC(clk_reset_hash);
       }
 
@@ -650,6 +644,8 @@ __launch_bounds__(BLOCK_SIZE, BLOCK_COUNT) __global__
       if ((iter + 1) % small_hash_reset_interval == 0) {
         _CLK_START();
         hashmap::init<0, BLOCK_SIZE>(local_visited_hashmap_ptr, hash_bitlen);
+        hashmap::insert_batch<0, BLOCK_SIZE>(
+          local_visited_hashmap_ptr, hash_bitlen, blacklist_ptr, blacklist_len);
         _CLK_REC(clk_reset_hash);
       }
     }
@@ -834,6 +830,7 @@ template <unsigned TEAM_SIZE,
 void select_and_run(  // raft::resources const& res,
   raft::device_matrix_view<const DATA_T, int64_t, layout_stride> dataset,
   raft::device_matrix_view<const INDEX_T, int64_t, row_major> graph,
+  std::optional<raft::device_vector_view<const INDEX_T, int64_t>> blacklist,
   INDEX_T* const topk_indices_ptr,          // [num_queries, topk]
   DISTANCE_T* const topk_distances_ptr,     // [num_queries, topk]
   const DATA_T* const queries_ptr,          // [num_queries, dataset_dim]
@@ -854,9 +851,7 @@ void select_and_run(  // raft::resources const& res,
   size_t itopk_size,
   size_t search_width,
   size_t min_iterations,
-  size_t max_iterations,,
-  INDEX_T* const blacklist_ptr,        // [blacklist_len]
-  const std::uint32_t blacklist_len
+  size_t max_iterations,
   cudaStream_t stream)
 {
   auto kernel = search_kernel_config<TEAM_SIZE, MAX_DATASET_DIM, DATA_T, INDEX_T, DISTANCE_T>::
@@ -890,8 +885,8 @@ void select_and_run(  // raft::resources const& res,
                                                          hash_bitlen,
                                                          small_hash_bitlen,
                                                          small_hash_reset_interval,
-                                                         blacklist_ptr,
-                                                         blacklist_len);
+                                                         blacklist.data_handle(),
+                                                         blacklist.extent(0));
   RAFT_CUDA_TRY(cudaPeekAtLastError());
 }
 }  // namespace single_cta_search

@@ -313,9 +313,8 @@ void search(raft::resources const& res,
     distances.data_handle(), distances.extent(0), distances.extent(1));
 
   cagra::detail::search_main<T, internal_IdxT, IdxT>(
-    res, params, idx, queries_internal, neighbors_internal, distances_internal);
+    res, params, idx, queries_internal, neighbors_internal, distances_internal, std::nullopt);
 }
-
 
 /**
  * @brief Search ANN using the constructed index.
@@ -334,33 +333,42 @@ void search(raft::resources const& res,
  * @param[out] distances a device matrix view to the distances to the selected neighbors [n_queries,
  * k]
  */
- template <typename T, typename IdxT>
- void remove(raft::resources const& res,
-             const search_params& params,
-             const index<T, IdxT>& idx,
-             raft::device_vector_view<IdxT, int64_t> remove_ids)
+template <typename T, typename IdxT>
+void search_with_filtering(raft::resources const& res,
+                           const search_params& params,
+                           const index<T, IdxT>& idx,
+                           raft::device_matrix_view<const T, int64_t, row_major> queries,
+                           raft::device_matrix_view<IdxT, int64_t, row_major> neighbors,
+                           raft::device_matrix_view<float, int64_t, row_major> distances,
+                           raft::device_vector_view<const IdxT, int64_t> filter_indices)
 {
-  idx.blacklist_ = raft::make_device_matrix<const T, int64_t>(res, remove_ids.extend(0));
-  raft::copy(
-    remove_ids.data_handle(),
-    idx.blacklist_.data_handle(),
-    remove_ids.extent(0),
-    resource::get_cuda_stream(res));
-  /*
-  //TODO: Make the remove incremental
-  auto total_blacklist_len = idx.blacklist_.extent(0) + remove_ids.extend(0);
-  auto new_blacklist_ = raft::make_device_matrix<const T, int64_t>(res, total_blacklist_len);
+  RAFT_EXPECTS(
+    queries.extent(0) == neighbors.extent(0) && queries.extent(0) == distances.extent(0),
+    "Number of rows in output neighbors and distances matrices must equal the number of queries.");
 
-  raft::copy(
-    new_blacklist_.data_handle(),
-    idx.blacklist_.data_handle(),
-    idx.blacklist_.extent(0),
-    resource::get_cuda_stream(res));
-  raft::copy(
-    remove_ids.data_handle(),
-    idx.blacklist_.data_handle() + idx.blacklist_.extent(0),
-    remove_ids.extent(0),
-    resource::get_cuda_stream(res));*/
+  RAFT_EXPECTS(neighbors.extent(1) == distances.extent(1),
+               "Number of columns in output neighbors and distances matrices must equal k");
+  RAFT_EXPECTS(queries.extent(1) == idx.dim(),
+               "Number of query dimensions should equal number of dimensions in the index.");
+
+  using internal_IdxT   = typename std::make_unsigned<IdxT>::type;
+  auto queries_internal = raft::make_device_matrix_view<const T, int64_t, row_major>(
+    queries.data_handle(), queries.extent(0), queries.extent(1));
+  auto neighbors_internal = raft::make_device_matrix_view<internal_IdxT, int64_t, row_major>(
+    reinterpret_cast<internal_IdxT*>(neighbors.data_handle()),
+    neighbors.extent(0),
+    neighbors.extent(1));
+  auto distances_internal = raft::make_device_matrix_view<float, int64_t, row_major>(
+    distances.data_handle(), distances.extent(0), distances.extent(1));
+
+  cagra::detail::search_main<T, internal_IdxT, IdxT>(
+    res,
+    params,
+    idx,
+    queries_internal,
+    neighbors_internal,
+    distances_internal,
+    std::make_optional<decltype(filter_indices)>(filter_indices));
 }
 /** @} */  // end group cagra
 

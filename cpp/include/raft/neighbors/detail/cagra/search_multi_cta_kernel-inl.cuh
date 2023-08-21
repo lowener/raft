@@ -31,6 +31,7 @@
 
 #include "bitonic.hpp"
 #include "compute_distance.hpp"
+#include "cuda_utils.cuh"
 #include "device_common.hpp"
 #include "hashmap.hpp"
 #include "search_plan.cuh"
@@ -153,9 +154,8 @@ __launch_bounds__(BLOCK_SIZE, BLOCK_COUNT) __global__ void search_kernel(
   const uint32_t min_iteration,
   const uint32_t max_iteration,
   uint32_t* const num_executed_iterations, /* stats */
-  INDEX_T* const blacklist_ptr,        // [blacklist_len]
-  const std::uint32_t blacklist_len
-)
+  INDEX_T* const blacklist_ptr,            // [blacklist_len]
+  const std::uint32_t blacklist_len)
 {
   assert(blockDim.x == BLOCK_SIZE);
   assert(dataset_dim <= MAX_DATASET_DIM);
@@ -331,34 +331,6 @@ __launch_bounds__(BLOCK_SIZE, BLOCK_COUNT) __global__ void search_kernel(
 #endif
 }
 
-template <class T>
-__global__ void set_value_batch_kernel(T* const dev_ptr,
-                                       const std::size_t ld,
-                                       const T val,
-                                       const std::size_t count,
-                                       const std::size_t batch_size)
-{
-  const auto tid = threadIdx.x + blockIdx.x * blockDim.x;
-  if (tid >= count * batch_size) { return; }
-  const auto batch_id              = tid / count;
-  const auto elem_id               = tid % count;
-  dev_ptr[elem_id + ld * batch_id] = val;
-}
-
-template <class T>
-void set_value_batch(T* const dev_ptr,
-                     const std::size_t ld,
-                     const T val,
-                     const std::size_t count,
-                     const std::size_t batch_size,
-                     cudaStream_t cuda_stream)
-{
-  constexpr std::uint32_t block_size = 256;
-  const auto grid_size               = (count * batch_size + block_size - 1) / block_size;
-  set_value_batch_kernel<T>
-    <<<grid_size, block_size, 0, cuda_stream>>>(dev_ptr, ld, val, count, batch_size);
-}
-
 template <unsigned TEAM_SIZE,
           unsigned MAX_DATASET_DIM,
           typename DATA_T,
@@ -456,6 +428,7 @@ template <unsigned TEAM_SIZE,
 void select_and_run(  // raft::resources const& res,
   raft::device_matrix_view<const DATA_T, int64_t, layout_stride> dataset,
   raft::device_matrix_view<const INDEX_T, int64_t, row_major> graph,
+  std::optional<raft::device_vector_view<const INDEX_T, int64_t>> blacklist,
   INDEX_T* const topk_indices_ptr,          // [num_queries, topk]
   DISTANCE_T* const topk_distances_ptr,     // [num_queries, topk]
   const DATA_T* const queries_ptr,          // [num_queries, dataset_dim]
@@ -477,8 +450,6 @@ void select_and_run(  // raft::resources const& res,
   size_t search_width,
   size_t min_iterations,
   size_t max_iterations,
-  INDEX_T* const blacklist_ptr,        // [blacklist_len]
-  const std::uint32_t blacklist_len,
   cudaStream_t stream)
 {
   auto kernel = search_kernel_config<TEAM_SIZE, MAX_DATASET_DIM, DATA_T, INDEX_T, DISTANCE_T>::
@@ -490,6 +461,14 @@ void select_and_run(  // raft::resources const& res,
   const uint32_t hash_size = hashmap::get_size(hash_bitlen);
   set_value_batch(
     hashmap_ptr, hash_size, utils::get_max_value<INDEX_T>(), hash_size, num_queries, stream);
+  // Fill the hashmap of the first query, and copy it to the other hashmap rows
+  hashmap::insert_batch(
+    local_visited_hashmap_ptr, hash_bitlen, blacklist.data_handle(), blacklist.extent(0));
+  copy_values_batch(local_visited_hashmap_ptr,
+                    local_visited_hashmap_ptr + hash_size,
+                    hash_size,
+                    hash_size,
+                    num_queries);
 
   dim3 block_dims(block_size, 1, 1);
   dim3 grid_dims(num_cta_per_query, num_queries, 1);
@@ -518,8 +497,8 @@ void select_and_run(  // raft::resources const& res,
                                                        min_iterations,
                                                        max_iterations,
                                                        num_executed_iterations,
-                                                       blacklist_ptr,
-                                                       blacklist_len);
+                                                       blacklist.data_handle(),
+                                                       blacklist.extent(0));
 }
 
 }  // namespace multi_cta_search

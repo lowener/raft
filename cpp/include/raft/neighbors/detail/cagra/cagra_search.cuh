@@ -58,7 +58,8 @@ void search_main(raft::resources const& res,
                  const index<T, IdxT>& index,
                  raft::device_matrix_view<const T, int64_t, row_major> queries,
                  raft::device_matrix_view<internal_IdxT, int64_t, row_major> neighbors,
-                 raft::device_matrix_view<DistanceT, int64_t, row_major> distances)
+                 raft::device_matrix_view<DistanceT, int64_t, row_major> distances,
+                 std::optional<raft::device_vector_view<const INDEX_T, int64_t>> blacklist)
 {
   RAFT_LOG_DEBUG("# dataset size = %lu, dim = %lu\n",
                  static_cast<size_t>(index.dataset().extent(0)),
@@ -107,6 +108,7 @@ void search_main(raft::resources const& res,
     (*plan)(res,
             dataset_internal,
             graph_internal,
+            blacklist,
             _topk_indices_ptr,
             _topk_distances_ptr,
             _query_ptr,

@@ -17,6 +17,7 @@
 #pragma once
 
 #include "hashmap.hpp"
+#include <optional>
 #include <raft/core/resource/cuda_stream.hpp>
 // #include "search_single_cta.cuh"
 // #include "topk_for_cagra/topk_core.cuh"
@@ -107,6 +108,7 @@ struct search_plan_impl : public search_plan_impl_base {
   virtual void operator()(raft::resources const& res,
                           raft::device_matrix_view<const DATA_T, int64_t, layout_stride> dataset,
                           raft::device_matrix_view<const INDEX_T, int64_t, row_major> graph,
+                          std::optional<raft::device_vector_view<const INDEX_T, int64_t>> blacklist,
                           INDEX_T* const result_indices_ptr,       // [num_queries, topk]
                           DISTANCE_T* const result_distances_ptr,  // [num_queries, topk]
                           const DATA_T* const queries_ptr,         // [num_queries, dataset_dim]

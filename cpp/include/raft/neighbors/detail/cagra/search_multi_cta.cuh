@@ -180,6 +180,7 @@ struct search : public search_plan_impl<DATA_T, INDEX_T, DISTANCE_T> {
   void operator()(raft::resources const& res,
                   raft::device_matrix_view<const DATA_T, int64_t, layout_stride> dataset,
                   raft::device_matrix_view<const INDEX_T, int64_t, row_major> graph,
+                  std::optional<raft::device_vector_view<const INDEX_T, int64_t>> blacklist,
                   INDEX_T* const topk_indices_ptr,          // [num_queries, topk]
                   DISTANCE_T* const topk_distances_ptr,     // [num_queries, topk]
                   const DATA_T* const queries_ptr,          // [num_queries, dataset_dim]
@@ -189,6 +190,8 @@ struct search : public search_plan_impl<DATA_T, INDEX_T, DISTANCE_T> {
                   uint32_t topk)
   {
     cudaStream_t stream = resource::get_cuda_stream(res);
+    auto* blacklist_ptr = blacklist.has_value() ? blacklist.value().data_handle() : nullptr;
+    auto blacklist_len  = blacklist.has_value() ? blacklist.value().extent(0) : int64_t(0);
 
     select_and_run<TEAM_SIZE, MAX_DATASET_DIM, DATA_T, INDEX_T, DISTANCE_T>(
       dataset,
@@ -213,6 +216,8 @@ struct search : public search_plan_impl<DATA_T, INDEX_T, DISTANCE_T> {
       search_width,
       min_iterations,
       max_iterations,
+      blacklist_ptr,
+      blacklist_len,
       stream);
     RAFT_CUDA_TRY(cudaPeekAtLastError());
 

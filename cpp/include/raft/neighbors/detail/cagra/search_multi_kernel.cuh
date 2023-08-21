@@ -30,6 +30,7 @@
 #include <vector>
 
 #include "compute_distance.hpp"
+#include "cuda_utils.cuh"
 #include "device_common.hpp"
 #include "fragment.hpp"
 #include "hashmap.hpp"
@@ -213,7 +214,9 @@ __global__ void pickup_next_parents_kernel(
   INDEX_T* const parent_list_ptr,      // [num_queries, ldd]
   const std::size_t ldd,               // (*) ldd >= parent_list_size
   const std::size_t parent_list_size,  //
-  std::uint32_t* const terminate_flag)
+  std::uint32_t* const terminate_flag,
+  INDEX_T* const blacklist_ptr,        // [blacklist_len]
+  const std::uint32_t blacklist_len)
 {
   constexpr INDEX_T index_msb_1_mask = utils::gen_index_msb_1_mask<INDEX_T>::value;
 
@@ -254,6 +257,8 @@ __global__ void pickup_next_parents_kernel(
   } else if (small_hash_bitlen) {
     // reset small-hash
     hashmap::init<32>(visited_hashmap_ptr + (ldb * query_id), hash_bitlen);
+    hashmap::insert_batch<32>(
+      visited_hashmap_ptr + (ldb * query_id), hash_bitlen, blacklist_ptr, blacklist_len);
   }
 
   if (small_hash_bitlen) {
@@ -279,6 +284,8 @@ void pickup_next_parents(INDEX_T* const parent_candidates_ptr,  // [num_queries,
                          const std::size_t ldd,               // (*) ldd >= parent_list_size
                          const std::size_t parent_list_size,  //
                          std::uint32_t* const terminate_flag,
+                         INDEX_T* const blacklist_ptr,        // [blacklist_len]
+                         const std::uint32_t blacklist_len,
                          cudaStream_t cuda_stream = 0)
 {
   std::uint32_t block_size = 32;
@@ -299,7 +306,9 @@ void pickup_next_parents(INDEX_T* const parent_candidates_ptr,  // [num_queries,
                                                   parent_list_ptr,
                                                   ldd,
                                                   parent_list_size,
-                                                  terminate_flag);
+                                                  terminate_flag,
+                                                  blacklist_ptr,
+                                                  blacklist_len);
 }
 
 template <unsigned TEAM_SIZE,
@@ -468,34 +477,6 @@ void batched_memcpy(T* const dst,        // [batch_size, ld_dst]
     <<<grid_size, block_size, 0, cuda_stream>>>(dst, ld_dst, src, ld_src, count, batch_size);
 }
 
-template <class T>
-__global__ void set_value_batch_kernel(T* const dev_ptr,
-                                       const std::size_t ld,
-                                       const T val,
-                                       const std::size_t count,
-                                       const std::size_t batch_size)
-{
-  const auto tid = threadIdx.x + blockIdx.x * blockDim.x;
-  if (tid >= count * batch_size) { return; }
-  const auto batch_id              = tid / count;
-  const auto elem_id               = tid % count;
-  dev_ptr[elem_id + ld * batch_id] = val;
-}
-
-template <class T>
-void set_value_batch(T* const dev_ptr,
-                     const std::size_t ld,
-                     const T val,
-                     const std::size_t count,
-                     const std::size_t batch_size,
-                     cudaStream_t cuda_stream)
-{
-  constexpr std::uint32_t block_size = 256;
-  const auto grid_size               = (count * batch_size + block_size - 1) / block_size;
-  set_value_batch_kernel<T>
-    <<<grid_size, block_size, 0, cuda_stream>>>(dev_ptr, ld, val, count, batch_size);
-}
-
 // result_buffer (work buffer) for "multi-kernel"
 // +--------------------+------------------------------+-------------------+
 // | internal_top_k (A) | neighbors of internal_top_k  | internal_topk (B) |
@@ -596,6 +577,7 @@ struct search : search_plan_impl<DATA_T, INDEX_T, DISTANCE_T> {
   void operator()(raft::resources const& res,
                   raft::device_matrix_view<const DATA_T, int64_t, layout_stride> dataset,
                   raft::device_matrix_view<const INDEX_T, int64_t, row_major> graph,
+                  std::optional<raft::device_vector_view<const INDEX_T, int64_t>> blacklist,
                   INDEX_T* const topk_indices_ptr,          // [num_queries, topk]
                   DISTANCE_T* const topk_distances_ptr,     // [num_queries, topk]
                   const DATA_T* const queries_ptr,          // [num_queries, dataset_dim]
@@ -605,7 +587,10 @@ struct search : search_plan_impl<DATA_T, INDEX_T, DISTANCE_T> {
                   uint32_t topk)
   {
     // Init hashmap
-    cudaStream_t stream      = resource::get_cuda_stream(res);
+    cudaStream_t stream = resource::get_cuda_stream(res);
+    auto* blacklist_ptr = blacklist.has_value() ? blacklist.value().data_handle() : nullptr;
+    auto blacklist_len  = blacklist.has_value() ? blacklist.value().extent(0) : int64_t(0);
+
     const uint32_t hash_size = hashmap::get_size(hash_bitlen);
     set_value_batch(
       hashmap.data(), hash_size, utils::get_max_value<INDEX_T>(), hash_size, num_queries, stream);
@@ -673,6 +658,8 @@ struct search : search_plan_impl<DATA_T, INDEX_T, DISTANCE_T> {
                           search_width,
                           search_width,
                           terminate_flag.data(),
+                          blacklist.data_handle(),
+                          blacklist.extent(0),
                           stream);
 
       // termination (2)
