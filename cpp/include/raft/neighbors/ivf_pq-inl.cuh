@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include <functional>
 #include <raft/neighbors/detail/ivf_pq_build.cuh>
 #include <raft/neighbors/detail/ivf_pq_search.cuh>
 #include <raft/neighbors/ivf_pq_serialize.cuh>
@@ -145,12 +146,12 @@ void extend(raft::resources const& handle,
  * The exact size of the temporary buffer depends on multiple factors and is an implementation
  * detail. However, you can safely specify a small initial size for the memory pool, so that only a
  * few allocations happen to grow it during the first invocations of the `search`.
+ * Signature of the sample filter function:
+ *         `(uint32_t query_ix, uint32 cluster_ix, uint32_t sample_ix) -> bool` or
+ *         `(uint32_t query_ix, uint32 sample_ix) -> bool`
  *
  * @tparam T data element type
  * @tparam IdxT type of the indices
- * @tparam IvfSampleFilterT Device filter function, with the signature
- *         `(uint32_t query_ix, uint32 cluster_ix, uint32_t sample_ix) -> bool` or
- *         `(uint32_t query_ix, uint32 sample_ix) -> bool`
  *
  * @param[in] handle
  * @param[in] params configure the search
@@ -162,14 +163,15 @@ void extend(raft::resources const& handle,
  * k]
  * @param[in] sample_filter a device filter function that greenlights samples for a given query.
  */
-template <typename T, typename IdxT, typename IvfSampleFilterT>
+template <typename T, typename IdxT>
 void search_with_filtering(raft::resources const& handle,
                            const search_params& params,
                            const index<IdxT>& idx,
                            raft::device_matrix_view<const T, uint32_t, row_major> queries,
                            raft::device_matrix_view<IdxT, uint32_t, row_major> neighbors,
                            raft::device_matrix_view<float, uint32_t, row_major> distances,
-                           IvfSampleFilterT sample_filter = IvfSampleFilterT{})
+                           std::function<bool(uint32_t, uint32_t, uint32_t)> sample_filter =
+                             filtering::none_ivf_sample_filter{})
 {
   RAFT_EXPECTS(
     queries.extent(0) == neighbors.extent(0) && queries.extent(0) == distances.extent(0),
@@ -191,6 +193,24 @@ void search_with_filtering(raft::resources const& handle,
                  neighbors.data_handle(),
                  distances.data_handle(),
                  sample_filter);
+}
+
+/**
+ * @brief Overload of `search_with_filtering` that accepts a `std::function` with two arguments:
+ * query_ix and sample_ix
+ */
+template <typename T, typename IdxT>
+void search_with_filtering(raft::resources const& handle,
+                           const search_params& params,
+                           const index<IdxT>& idx,
+                           raft::device_matrix_view<const T, uint32_t, row_major> queries,
+                           raft::device_matrix_view<IdxT, uint32_t, row_major> neighbors,
+                           raft::device_matrix_view<float, uint32_t, row_major> distances,
+                           std::function<bool(uint32_t, uint32_t)> sample_filter)
+{
+  auto filter_adapter =
+    raft::neighbors::filtering::ivf_to_sample_filter(idx.inds_ptrs().data_handle(), sample_filter);
+  return search_with_filtering(handle, params, idx, queries, neighbors, distances, filter_adapter);
 }
 
 /**
@@ -372,12 +392,12 @@ void extend(raft::resources const& handle,
  * The exact size of the temporary buffer depends on multiple factors and is an implementation
  * detail. However, you can safely specify a small initial size for the memory pool, so that only a
  * few allocations happen to grow it during the first invocations of the `search`.
+ * Signature of the sample filter function:
+ *         `(uint32_t query_ix, uint32 cluster_ix, uint32_t sample_ix) -> bool` or
+ *         `(uint32_t query_ix, uint32 sample_ix) -> bool`
  *
  * @tparam T data element type
  * @tparam IdxT type of the indices
- * @tparam IvfSampleFilterT Device filter function, with the signature
- *         `(uint32_t query_ix, uint32 cluster_ix, uint32_t sample_ix) -> bool` or
- *         `(uint32_t query_ix, uint32 sample_ix) -> bool`
  *
  * @param[in] handle
  * @param[in] params configure the search
@@ -390,7 +410,7 @@ void extend(raft::resources const& handle,
  * @param[out] distances a device pointer to the distances to the selected neighbors [n_queries, k]
  * @param[in] sample_filter a device filter function that greenlights samples for a given query
  */
-template <typename T, typename IdxT, typename IvfSampleFilterT>
+template <typename T, typename IdxT>
 void search_with_filtering(raft::resources const& handle,
                            const search_params& params,
                            const index<IdxT>& idx,
@@ -399,16 +419,38 @@ void search_with_filtering(raft::resources const& handle,
                            uint32_t k,
                            IdxT* neighbors,
                            float* distances,
-                           IvfSampleFilterT sample_filter = IvfSampleFilterT{})
+                           std::function<bool(uint32_t, uint32_t, uint32_t)> sample_filter =
+                             filtering::none_ivf_sample_filter{})
 {
   detail::search(handle, params, idx, queries, n_queries, k, neighbors, distances, sample_filter);
+}
+
+/**
+ * @brief Overload of `search_with_filtering` that accepts a `std::function` with two arguments:
+ * query_ix and sample_ix
+ */
+template <typename T, typename IdxT>
+void search_with_filtering(raft::resources const& handle,
+                           const search_params& params,
+                           const index<IdxT>& idx,
+                           const T* queries,
+                           uint32_t n_queries,
+                           uint32_t k,
+                           IdxT* neighbors,
+                           float* distances,
+                           std::function<bool(uint32_t, uint32_t)> sample_filter)
+{
+  auto filter_adapter =
+    raft::neighbors::filtering::ivf_to_sample_filter(idx.inds_ptrs().data_handle(), sample_filter);
+  search_with_filtering(
+    handle, params, idx, queries, n_queries, k, neighbors, distances, filter_adapter);
 }
 
 /**
  * This function is deprecated and will be removed in a future.
  * Please drop the `mr` argument and use `raft::resource::set_workspace_resource` instead.
  */
-template <typename T, typename IdxT, typename IvfSampleFilterT>
+template <typename T, typename IdxT>
 [[deprecated(
   "Drop the `mr` argument and use `raft::resource::set_workspace_resource` instead")]] void
 search_with_filtering(raft::resources const& handle,
@@ -420,7 +462,8 @@ search_with_filtering(raft::resources const& handle,
                       IdxT* neighbors,
                       float* distances,
                       rmm::mr::device_memory_resource* mr,
-                      IvfSampleFilterT sample_filter = IvfSampleFilterT{})
+                      std::function<bool(uint32_t, uint32_t, uint32_t)> sample_filter =
+                        filtering::none_ivf_sample_filter{})
 {
   if (mr != nullptr) {
     // Shallow copy of the resource with the automatic lifespan:
@@ -436,6 +479,29 @@ search_with_filtering(raft::resources const& handle,
   }
 }
 
+/**
+ * @brief Overload of `search_with_filtering` that accepts a `std::function` with two arguments:
+ * query_ix and sample_ix
+ */
+template <typename T, typename IdxT>
+[[deprecated(
+  "Drop the `mr` argument and use `raft::resource::set_workspace_resource` instead")]] void
+search_with_filtering(raft::resources const& handle,
+                      const search_params& params,
+                      const index<IdxT>& idx,
+                      const T* queries,
+                      uint32_t n_queries,
+                      uint32_t k,
+                      IdxT* neighbors,
+                      float* distances,
+                      rmm::mr::device_memory_resource* mr,
+                      std::function<bool(uint32_t, uint32_t)> sample_filter)
+{
+  auto filter_adapter =
+    raft::neighbors::filtering::ivf_to_sample_filter(idx.inds_ptrs().data_handle(), sample_filter);
+  return search_with_filtering(
+    handle, params, idx, queries, n_queries, k, neighbors, distances, mr, filter_adapter);
+}
 /**
  * @brief Search ANN using the constructed index.
  *
