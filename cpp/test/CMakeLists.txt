@@ -360,6 +360,9 @@ if(BUILD_TESTS)
     NAME
     NEIGHBORS_ANN_CAGRA_TEST
     PATH
+    test/neighbors/ann_cagra/test_filter_float_uint32_t.cu
+    test/neighbors/ann_cagra/test_filter_int8_t_uint32_t.cu
+    test/neighbors/ann_cagra/test_filter_uint8_t_uint32_t.cu
     test/neighbors/ann_cagra/test_float_uint32_t.cu
     test/neighbors/ann_cagra/test_int8_t_uint32_t.cu
     test/neighbors/ann_cagra/test_uint8_t_uint32_t.cu

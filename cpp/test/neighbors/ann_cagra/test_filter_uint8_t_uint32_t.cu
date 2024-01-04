@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,16 +16,19 @@
 
 #include <gtest/gtest.h>
 
+#undef RAFT_EXPLICIT_INSTANTIATE_ONLY  // Search with filter instantiation
+
 #include "../ann_cagra.cuh"
 
 namespace raft::neighbors::cagra {
 
-typedef AnnCagraTest<float, std::int8_t, std::uint32_t> AnnCagraTestI8_U32;
-TEST_P(AnnCagraTestI8_U32, AnnCagra) { this->testCagra(); }
-typedef AnnCagraSortTest<float, std::int8_t, std::uint32_t> AnnCagraSortTestI8_U32;
-TEST_P(AnnCagraSortTestI8_U32, AnnCagraSort) { this->testCagraSort(); }
+typedef AnnCagraFilterTest<float, std::uint8_t, std::uint32_t> AnnCagraFilterTestU8_U32;
+TEST_P(AnnCagraFilterTestU8_U32, AnnCagraSort)
+{
+  this->testCagraFilter();
+  this->testCagraRemoved();
+}
 
-INSTANTIATE_TEST_CASE_P(AnnCagraTest, AnnCagraTestI8_U32, ::testing::ValuesIn(inputs));
-INSTANTIATE_TEST_CASE_P(AnnCagraSortTest, AnnCagraSortTestI8_U32, ::testing::ValuesIn(inputs));
+INSTANTIATE_TEST_CASE_P(AnnCagraFilterTest, AnnCagraFilterTestU8_U32, ::testing::ValuesIn(inputs));
 
 }  // namespace raft::neighbors::cagra
