@@ -22,9 +22,9 @@
 #pragma once
 
 #include "detail/processing.hpp"
-#include "ivf_flat_types.hpp"
 
 #include <raft/distance/distance_types.hpp>
+#include <raft/neighbors/ivf_flat_types.hpp>
 #include <raft/neighbors/ivf_pq_types.hpp>
 
 namespace raft {
