@@ -316,6 +316,7 @@ if(BUILD_TESTS)
     sparse/sddmm.cu
     sparse/select_k_csr.cu
     sparse/sort.cu
+    sparse/spectral_clustering.cu
     sparse/spgemmi.cu
     sparse/spmm.cu
     sparse/symmetrize.cu
