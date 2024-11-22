@@ -230,6 +230,8 @@ class csr_matrix_view
     : sparse_matrix_view<ElementType,
                          compressed_structure_view<IndptrType, IndicesType, NZType, is_device>,
                          is_device>(element_span, structure_view){};
+
+  csr_matrix_view() = default;
 };
 
 template <typename ElementType,

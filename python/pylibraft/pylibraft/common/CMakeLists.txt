@@ -13,7 +13,7 @@
 # =============================================================================
 
 # Set the list of Cython files to build
-set(cython_sources cuda.pyx handle.pyx mdspan.pyx interruptible.pyx)
+set(cython_sources cuda.pyx handle.pyx mdspan.pyx interruptible.pyx sparse_matrix.pyx)
 set(linked_libraries raft::raft)
 
 # Build all of the Cython targets
