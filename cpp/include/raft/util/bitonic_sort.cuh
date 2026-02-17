@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -232,6 +232,169 @@ class bitonic {
       bitonic<kSize2>::sort_impl(true, warp_width, keys + kSize2, (payloads + kSize2)...);
     }
     bitonic<Size>::merge_impl(ascending, warp_width, keys, payloads...);
+  }
+};
+
+/**
+ * Runtime version of warp-wide bitonic merge and sort.
+ * This version accepts the size as a runtime parameter instead of a template parameter.
+ *
+ * Performance Note: This runtime version will be slower than the template-based `bitonic<Size>`
+ * class due to the lack of compile-time loop unrolling and optimization opportunities. Use the
+ * template version when the size is known at compile time for better performance.
+ *
+ * The data is strided among `warp_width` threads, similar to the template version.
+ * e.g. calling `bitonic_runtime(4, ascending=true).sort(arr)` takes a unique 4-element array
+ * as input of each thread in a warp and sorts them.
+ *
+ * @param size
+ *   number of elements processed in each thread;
+ *   i.e. the total data size is `size * warp_width`.
+ *   Must be power-of-two.
+ *
+ * Usage example:
+ * @code{.cpp}
+ *   int arr[4] = {3, 1, 4, 2};
+ *   bitonic_runtime(4, true, 32).sort(arr);
+ * @endcode
+ */
+class bitonic_runtime {
+ public:
+  /**
+   * Initialize bitonic sort config.
+   *
+   * @param size
+   *   number of elements processed in each thread;
+   *   i.e. the total data size is `size * warp_width`.
+   *   Must be power-of-two.
+   * @param ascending
+   *   the resulting order (true: ascending, false: descending).
+   * @param warp_width
+   *   the number of threads participating in the warp-level primitives;
+   *   the total size of the sorted data is `size * warp_width`.
+   *   Must be power-of-two, not larger than the WarpSize.
+   */
+  _RAFT_DEVICE _RAFT_FORCEINLINE explicit bitonic_runtime(int size,
+                                                          bool ascending,
+                                                          int warp_width = WarpSize)
+    : size_(size), ascending_(ascending), warp_width_(warp_width)
+  {
+    // Runtime validation: size must be power-of-two
+    // Note: In device code, we rely on the caller to ensure this is true
+    // as assert() may not be available or may have performance impact
+  }
+
+  bitonic_runtime(bitonic_runtime const&)                    = delete;
+  bitonic_runtime(bitonic_runtime&&)                         = delete;
+  auto operator=(bitonic_runtime const&) -> bitonic_runtime& = delete;
+  auto operator=(bitonic_runtime&&) -> bitonic_runtime&      = delete;
+
+  /**
+   * You can think of this function in two ways:
+   *
+   *   1) Sort any bitonic sequence.
+   *   2) Merge two halves of the input data assuming they're already sorted, and their order is
+   *      opposite (i.e. either ascending+descending or descending+ascending).
+   *
+   * The input pointers are unique per-thread.
+   * See the class description for the description of the data layout.
+   *
+   * @param keys
+   *   is a device pointer to a contiguous array of keys, unique per thread; must be at least
+   * `size_` elements long.
+   * @param payloads
+   *   are zero or more associated arrays of the same size as keys, which are sorted together with
+   *   the keys; must be at least `size_` elements long.
+   */
+  template <typename KeyT, typename... PayloadTs>
+  _RAFT_DEVICE _RAFT_FORCEINLINE void merge(KeyT* __restrict__ keys,
+                                            PayloadTs* __restrict__... payloads) const
+  {
+    return merge_impl(size_, ascending_, warp_width_, keys, payloads...);
+  }
+
+  /**
+   * Sort the data.
+   * The input pointers are unique per-thread.
+   * See the class description for the description of the data layout.
+   *
+   * @param keys
+   *   is a device pointer to a contiguous array of keys, unique per thread; must be at least
+   * `size_` elements long.
+   * @param payloads
+   *   are zero or more associated arrays of the same size as keys, which are sorted together with
+   *   the keys; must be at least `size_` elements long.
+   */
+  template <typename KeyT, typename... PayloadTs>
+  _RAFT_DEVICE _RAFT_FORCEINLINE void sort(KeyT* __restrict__ keys,
+                                           PayloadTs* __restrict__... payloads) const
+  {
+    return sort_impl(size_, ascending_, warp_width_, keys, payloads...);
+  }
+
+ private:
+  const int size_;
+  const bool ascending_;
+  const int warp_width_;
+
+  template <typename KeyT, typename... PayloadTs>
+  static _RAFT_DEVICE _RAFT_FORCEINLINE void merge_impl(int size,
+                                                        bool ascending,
+                                                        int warp_width,
+                                                        KeyT* __restrict__ keys,
+                                                        PayloadTs* __restrict__... payloads)
+  {
+    for (int s = size; s > 1; s >>= 1) {
+      const int stride = s >> 1;
+      for (int offset = 0; offset < size; offset += s) {
+#pragma unroll 2
+        for (int i = offset + stride - 1; i >= offset; i--) {
+          const int other_i = i + stride;
+          KeyT& key         = keys[i];
+          KeyT& other       = keys[other_i];
+          if (ascending ? key > other : key < other) {
+            swap(key, other);
+            (swap(payloads[i], payloads[other_i]), ...);
+          }
+        }
+      }
+    }
+    const int lane = laneId();
+    for (int i = 0; i < size; i++) {
+      KeyT& key = keys[i];
+      for (int stride = (warp_width >> 1); stride > 0; stride >>= 1) {
+        const bool is_second = lane & stride;
+        const KeyT other     = shfl_xor(key, stride, warp_width);
+        const bool do_assign = (ascending != is_second) ? key > other : key < other;
+
+        conditional_assign(do_assign, key, other);
+        // NB: don't put shfl_xor in a conditional; it must be called by all threads in a warp.
+        (conditional_assign(do_assign, payloads[i], shfl_xor(payloads[i], stride, warp_width)),
+         ...);
+      }
+    }
+  }
+
+  template <typename KeyT, typename... PayloadTs>
+  static _RAFT_DEVICE _RAFT_FORCEINLINE void sort_impl(int size,
+                                                       bool ascending,
+                                                       int warp_width,
+                                                       KeyT* __restrict__ keys,
+                                                       PayloadTs* __restrict__... payloads)
+  {
+    if (size == 1) {
+      // Base case: size == 1
+      const int lane = laneId();
+      for (int width = 2; width < warp_width; width <<= 1) {
+        merge_impl(1, lane & width, width, keys, payloads...);
+      }
+    } else {
+      // Recursive case: split in half
+      const int size2 = size / 2;
+      sort_impl(size2, false, warp_width, keys, payloads...);
+      sort_impl(size2, true, warp_width, keys + size2, (payloads + size2)...);
+    }
+    merge_impl(size, ascending, warp_width, keys, payloads...);
   }
 };
 

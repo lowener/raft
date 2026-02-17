@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -359,6 +359,268 @@ class warp_sort_filtered : public warp_sort<Capacity, Ascending, T, IdxT> {
   using warp_sort<Capacity, Ascending, T, IdxT>::idx_arr_;
 
   static constexpr int kMaxBufLen = (Capacity <= 64) ? 2 : 4;
+
+  T val_buf_[kMaxBufLen];
+  IdxT idx_buf_[kMaxBufLen];
+  int buf_len_;
+
+  T k_th_;
+};
+
+/**
+ * A fixed-size warp-level priority queue.
+ * By feeding the data through this queue, you get the `k <= Capacity`
+ * smallest/greatest values in the data.
+ *
+ * @tparam Ascending
+ *   which comparison to use: `true` means `<`, collect the smallest elements,
+ *   `false` means `>`, collect the greatest elements.
+ * @tparam T
+ *   the type of keys (what is being compared)
+ * @tparam IdxT
+ *   the type of payload (normally, indices of elements), i.e.
+ *   the content sorted alongside the keys.
+ */
+template <bool Ascending, typename T, typename IdxT, int Capacity = 256>
+class warp_sort_runtime {
+  static_assert(is_a_power_of_two(Capacity));
+  static_assert(std::is_default_constructible_v<IdxT>);
+
+ public:
+  /**
+   *  The `empty` value for the chosen binary operation,
+   *  i.e. `Ascending ? upper_bound<T>() : lower_bound<T>()`.
+   */
+  static constexpr T kDummy = Ascending ? upper_bound<T>() : lower_bound<T>();
+  /** Width of the subwarp. */
+  static constexpr int kWarpWidth = std::min<int>(Capacity, WarpSize);
+  /** The number of elements to select. */
+  const int k;
+  /** The number of elements in each subwarp*/
+  const int kArrLen;
+
+  /** Extra memory required per-block for keeping the state (shared or global). */
+  constexpr static auto mem_required(uint32_t block_size) -> size_t { return 0; }
+
+  /**
+   * Construct the warp_sort empty queue.
+   *
+   * @param k
+   *   number of elements to select.
+   */
+  _RAFT_DEVICE warp_sort_runtime(int k) : k(k), kArrLen(k / kWarpWidth)
+  {
+    RAFT_EXPECTS(k <= Capacity, "k must be less than or equal to Capacity");
+#pragma unroll 2
+    for (int i = 0; i < kArrLen; i++) {
+      val_arr_[i] = kDummy;
+      idx_arr_[i] = IdxT{};
+    }
+  }
+
+  /**
+   * Load k values from the pointers at the given position, and merge them in the storage.
+   *
+   * When it actually loads the values, it always performs some collective warp operations in the
+   * end, thus enforcing warp sync. This means, it's safe to call `store` with the same arguments
+   * after `load_sorted` without extra sync. Note, however, that this is not necessarily true for
+   * the reverse order, because the access patterns of `store` and `load_sorted` are different.
+   *
+   * @param[in] in
+   *    a device pointer to a contiguous array, unique per-subwarp
+   *    (length: k <= kWarpWidth * kMaxArrLen).
+   * @param[in] in_idx
+   *    a device pointer to a contiguous array, unique per-subwarp
+   *    (length: k <= kWarpWidth * kMaxArrLen).
+   * @param[in] do_merge
+   *    must be the same for all threads within a subwarp of size `kWarpWidth`.
+   *    It serves as a conditional; when `false` the function does nothing.
+   *    We need it to ensure threads within a full warp don't diverge calling `bitonic::merge()`.
+   */
+  _RAFT_DEVICE void load_sorted(const T* in, const IdxT* in_idx, bool do_merge = true)
+  {
+    if (do_merge) {
+      int idx = Pow2<kWarpWidth>::mod(laneId()) ^ Pow2<kWarpWidth>::Mask;
+#pragma unroll 2
+      for (int i = kArrLen - 1; i >= 0; --i, idx += kWarpWidth) {
+        if (idx < k) {
+          T t = in[idx];
+          if (is_ordered<Ascending>(t, val_arr_[i])) {
+            val_arr_[i] = t;
+            idx_arr_[i] = in_idx[idx];
+          }
+        }
+      }
+    }
+    if (kWarpWidth < WarpSize || do_merge) {
+      util::bitonic_runtime(kArrLen, Ascending, kWarpWidth).merge(val_arr_, idx_arr_);
+    }
+  }
+
+  /**
+   *  Save the content by the pointer location.
+   *
+   * @param[out] out
+   *   device pointer to a contiguous array, unique per-subwarp of size `kWarpWidth`
+   *    (length: k <= kWarpWidth * kMaxArrLen).
+   * @param[out] out_idx
+   *   device pointer to a contiguous array, unique per-subwarp of size `kWarpWidth`
+   *    (length: k <= kWarpWidth * kMaxArrLen).
+   * @param valF (optional) postprocess values (T -> OutT)
+   * @param idxF (optional) postprocess indices (IdxT -> OutIdxT)
+   */
+  template <typename OutT,
+            typename OutIdxT,
+            typename ValF = identity_op,
+            typename IdxF = identity_op>
+  _RAFT_DEVICE void store(OutT* out,
+                          OutIdxT* out_idx,
+                          ValF valF = raft::identity_op{},
+                          IdxF idxF = raft::identity_op{}) const
+  {
+    int idx = Pow2<kWarpWidth>::mod(laneId());
+#pragma unroll 2
+    for (int i = 0; i < kArrLen && idx < k; i++, idx += kWarpWidth) {
+      out[idx]     = valF(val_arr_[i]);
+      out_idx[idx] = idxF(idx_arr_[i]);
+    }
+  }
+
+ protected:
+  static constexpr int kMaxArrLen = Capacity / kWarpWidth;
+
+  T val_arr_[kMaxArrLen];
+  IdxT idx_arr_[kMaxArrLen];
+
+  /**
+   * Merge another array (sorted in the opposite direction) in the queue.
+   * Thanks to the other array being sorted in the opposite direction,
+   * it's enough to call bitonic.merge once to maintain the valid state
+   * of the queue.
+   *
+   * @tparam PerThreadSizeIn
+   *   the size of the other array per-thread (compared to `kMaxArrLen`).
+   *
+   * @param keys_in
+   *   the values to be merged in. Pointers are unique per-thread. The values
+   *   must already be sorted in the opposite direction.
+   *   The layout of `keys_in` must be the same as the layout of `val_arr_`.
+   * @param ids_in
+   *   the associated indices of the elements in the same format as `keys_in`.
+   */
+  _RAFT_DEVICE _RAFT_FORCEINLINE void merge_in(const T* __restrict__ keys_in,
+                                               const IdxT* __restrict__ ids_in,
+                                               int per_thread_size_in)
+  {
+#pragma unroll 2
+    for (int i = std::min(kArrLen, per_thread_size_in); i > 0; i--) {
+      T& key  = val_arr_[kArrLen - i];
+      T other = keys_in[per_thread_size_in - i];
+      if (is_ordered<Ascending>(other, key)) {
+        key                   = other;
+        idx_arr_[kArrLen - i] = ids_in[per_thread_size_in - i];
+      }
+    }
+    util::bitonic_runtime(kArrLen, Ascending, kWarpWidth).merge(val_arr_, idx_arr_);
+  }
+};
+
+/**
+ * This version of warp_sort compares each input element against the current
+ * estimate of k-th value before adding it to the intermediate sorting buffer.
+ * This makes the algorithm do less sorting steps for long input sequences
+ * at the cost of extra checks on each step.
+ *
+ * This implementation is preferred for large len values.
+ */
+template <bool Ascending, typename T, typename IdxT, int Capacity = 256>
+class warp_sort_filtered_runtime : public warp_sort_runtime<Ascending, T, IdxT, Capacity> {
+ public:
+  using warp_sort_runtime<Ascending, T, IdxT, Capacity>::kDummy;
+  using warp_sort_runtime<Ascending, T, IdxT, Capacity>::kWarpWidth;
+  using warp_sort_runtime<Ascending, T, IdxT, Capacity>::k;
+  using warp_sort_runtime<Ascending, T, IdxT, Capacity>::kArrLen;
+  using warp_sort_runtime<Ascending, T, IdxT, Capacity>::mem_required;
+
+  explicit _RAFT_DEVICE warp_sort_filtered_runtime(int k, T limit = kDummy)
+    : warp_sort_runtime<Ascending, T, IdxT, Capacity>(k), buf_len_(0), k_th_(limit)
+  {
+#pragma unroll
+    for (int i = 0; i < kMaxBufLen; i++) {
+      val_buf_[i] = kDummy;
+      idx_buf_[i] = IdxT{};
+    }
+  }
+
+  _RAFT_DEVICE _RAFT_FORCEINLINE static auto init_blockwide(int k,
+                                                            uint8_t* = nullptr,
+                                                            T limit  = kDummy)
+  {
+    return warp_sort_filtered_runtime<Ascending, T, IdxT, Capacity>{k, limit};
+  }
+
+  _RAFT_DEVICE void add(T val, IdxT idx)
+  {
+    // comparing for k_th should reduce the total amount of updates:
+    // `false` means the input value is surely not in the top-k values.
+    bool do_add = is_ordered<Ascending>(val, k_th_);
+    // merge the buf if it's full and we cannot add an element anymore.
+    if (any(buf_len_ + do_add > kMaxBufLen)) {
+      // still, add an element before merging if possible for this thread
+      if (do_add && buf_len_ < kMaxBufLen) {
+        add_to_buf_(val, idx);
+        do_add = false;
+      }
+      merge_buf_();
+    }
+    // add an element if necessary and haven't already.
+    if (do_add) { add_to_buf_(val, idx); }
+  }
+
+  _RAFT_DEVICE void done()
+  {
+    if (any(buf_len_ != 0)) { merge_buf_(); }
+  }
+
+ private:
+  _RAFT_DEVICE _RAFT_FORCEINLINE void set_k_th_()
+  {
+    // NB on using srcLane: it's ok if it is outside the warp size / width;
+    //                      the modulo op will be done inside the __shfl_sync.
+    k_th_ = shfl(val_arr_[kArrLen - 1], k - 1, kWarpWidth);
+  }
+
+  _RAFT_DEVICE _RAFT_FORCEINLINE void merge_buf_()
+  {
+    util::bitonic_runtime(kMaxBufLen, !Ascending, kWarpWidth).sort(val_buf_, idx_buf_);
+    this->merge_in(val_buf_, idx_buf_, kMaxBufLen);
+    buf_len_ = 0;
+    set_k_th_();  // contains warp sync
+#pragma unroll
+    for (int i = 0; i < kMaxBufLen; i++) {
+      val_buf_[i] = kDummy;
+    }
+  }
+
+  _RAFT_DEVICE _RAFT_FORCEINLINE void add_to_buf_(T val, IdxT idx)
+  {
+    // NB: the loop is used here to ensure the constant indexing,
+    //     to not force the buffers spill into the local memory.
+#pragma unroll
+    for (int i = 0; i < kMaxBufLen; i++) {
+      if (i == buf_len_) {
+        val_buf_[i] = val;
+        idx_buf_[i] = idx;
+      }
+    }
+    buf_len_++;
+  }
+
+  using warp_sort_runtime<Ascending, T, IdxT, Capacity>::kMaxArrLen;
+  using warp_sort_runtime<Ascending, T, IdxT, Capacity>::val_arr_;
+  using warp_sort_runtime<Ascending, T, IdxT, Capacity>::idx_arr_;
+
+  static constexpr int kMaxBufLen = 2;
 
   T val_buf_[kMaxBufLen];
   IdxT idx_buf_[kMaxBufLen];
