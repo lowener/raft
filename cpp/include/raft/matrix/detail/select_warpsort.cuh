@@ -381,7 +381,7 @@ class warp_sort_filtered : public warp_sort<Capacity, Ascending, T, IdxT> {
  *   the type of payload (normally, indices of elements), i.e.
  *   the content sorted alongside the keys.
  */
-template <bool Ascending, typename T, typename IdxT, int Capacity = 256>
+template <int Capacity, bool Ascending, typename T, typename IdxT>
 class warp_sort_runtime {
   static_assert(is_a_power_of_two(Capacity));
   static_assert(std::is_default_constructible_v<IdxT>);
@@ -408,7 +408,7 @@ class warp_sort_runtime {
    * @param k
    *   number of elements to select.
    */
-  _RAFT_DEVICE warp_sort_runtime(int k) : k(k), kArrLen(k / kWarpWidth)
+  _RAFT_DEVICE warp_sort_runtime(int k) : k(k), kArrLen((k + kWarpWidth - 1) / kWarpWidth)
   {
     RAFT_EXPECTS(k <= Capacity, "k must be less than or equal to Capacity");
 #pragma unroll 2
@@ -533,17 +533,17 @@ class warp_sort_runtime {
  *
  * This implementation is preferred for large len values.
  */
-template <bool Ascending, typename T, typename IdxT, int Capacity = 256>
-class warp_sort_filtered_runtime : public warp_sort_runtime<Ascending, T, IdxT, Capacity> {
+template <int Capacity, bool Ascending, typename T, typename IdxT>
+class warp_sort_filtered_runtime : public warp_sort_runtime<Capacity, Ascending, T, IdxT> {
  public:
-  using warp_sort_runtime<Ascending, T, IdxT, Capacity>::kDummy;
-  using warp_sort_runtime<Ascending, T, IdxT, Capacity>::kWarpWidth;
-  using warp_sort_runtime<Ascending, T, IdxT, Capacity>::k;
-  using warp_sort_runtime<Ascending, T, IdxT, Capacity>::kArrLen;
-  using warp_sort_runtime<Ascending, T, IdxT, Capacity>::mem_required;
+  using warp_sort_runtime<Capacity, Ascending, T, IdxT>::kDummy;
+  using warp_sort_runtime<Capacity, Ascending, T, IdxT>::kWarpWidth;
+  using warp_sort_runtime<Capacity, Ascending, T, IdxT>::k;
+  using warp_sort_runtime<Capacity, Ascending, T, IdxT>::kArrLen;
+  using warp_sort_runtime<Capacity, Ascending, T, IdxT>::mem_required;
 
   explicit _RAFT_DEVICE warp_sort_filtered_runtime(int k, T limit = kDummy)
-    : warp_sort_runtime<Ascending, T, IdxT, Capacity>(k), buf_len_(0), k_th_(limit)
+    : warp_sort_runtime<Capacity, Ascending, T, IdxT>(k), buf_len_(0), k_th_(limit)
   {
 #pragma unroll
     for (int i = 0; i < kMaxBufLen; i++) {
@@ -556,7 +556,7 @@ class warp_sort_filtered_runtime : public warp_sort_runtime<Ascending, T, IdxT, 
                                                             uint8_t* = nullptr,
                                                             T limit  = kDummy)
   {
-    return warp_sort_filtered_runtime<Ascending, T, IdxT, Capacity>{k, limit};
+    return warp_sort_filtered_runtime<Capacity, Ascending, T, IdxT>{k, limit};
   }
 
   _RAFT_DEVICE void add(T val, IdxT idx)
@@ -616,9 +616,9 @@ class warp_sort_filtered_runtime : public warp_sort_runtime<Ascending, T, IdxT, 
     buf_len_++;
   }
 
-  using warp_sort_runtime<Ascending, T, IdxT, Capacity>::kMaxArrLen;
-  using warp_sort_runtime<Ascending, T, IdxT, Capacity>::val_arr_;
-  using warp_sort_runtime<Ascending, T, IdxT, Capacity>::idx_arr_;
+  using warp_sort_runtime<Capacity, Ascending, T, IdxT>::kMaxArrLen;
+  using warp_sort_runtime<Capacity, Ascending, T, IdxT>::val_arr_;
+  using warp_sort_runtime<Capacity, Ascending, T, IdxT>::idx_arr_;
 
   static constexpr int kMaxBufLen = 2;
 
