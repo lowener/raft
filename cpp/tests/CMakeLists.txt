@@ -259,6 +259,7 @@ if(BUILD_TESTS)
     sparse/diagonal.cu
     sparse/filter.cu
     sparse/laplacian.cu
+    sparse/lobpcg.cu
     sparse/masked_matmul.cu
     sparse/norm.cu
     sparse/normalize.cu
