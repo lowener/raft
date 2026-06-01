@@ -241,8 +241,17 @@ if(BUILD_TESTS)
   )
 
   ConfigureTest(
-    NAME SOLVERS_TEST PATH linalg/eigen_solvers.cu lap/lap.cu sparse/mst.cu
-    sparse/solver/lanczos.cu sparse/solver/randomized_svds.cu LIB EXPLICIT_INSTANTIATE_ONLY
+    NAME
+    SOLVERS_TEST
+    PATH
+    linalg/eigen_solvers.cu
+    lap/lap.cu
+    sparse/mst.cu
+    sparse/solver/lanczos.cu
+    sparse/solver/lobpcg.cu
+    sparse/solver/randomized_svds.cu
+    LIB
+    EXPLICIT_INSTANTIATE_ONLY
   )
 
   ConfigureTest(
@@ -259,7 +268,6 @@ if(BUILD_TESTS)
     sparse/diagonal.cu
     sparse/filter.cu
     sparse/laplacian.cu
-    sparse/lobpcg.cu
     sparse/masked_matmul.cu
     sparse/norm.cu
     sparse/normalize.cu

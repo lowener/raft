@@ -3,6 +3,7 @@
 #
 
 from .lanczos import eigsh
+from .lobpcg import lobpcg
 from .svds import svds
 
-__all__ = ["eigsh", "svds"]
+__all__ = ["eigsh", "lobpcg", "svds"]

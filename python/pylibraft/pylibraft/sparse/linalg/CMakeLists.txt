@@ -6,7 +6,7 @@
 # =============================================================================
 
 # Set the list of Cython files to build
-set(cython_sources lanczos.pyx svds.pyx)
+set(cython_sources lanczos.pyx lobpcg.pyx svds.pyx)
 
 # TODO: should finally be replaced with 'compiled' library to be more generic, when that is
 # available

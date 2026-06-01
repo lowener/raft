@@ -282,6 +282,10 @@ if(RAFT_COMPILE_LIBRARY)
     src/raft_runtime/solver/lanczos_solver_int64_float.cu
     src/raft_runtime/solver/lanczos_solver_int_double.cu
     src/raft_runtime/solver/lanczos_solver_int_float.cu
+    src/raft_runtime/solver/lobpcg_solver_int64_double.cu
+    src/raft_runtime/solver/lobpcg_solver_int64_float.cu
+    src/raft_runtime/solver/lobpcg_solver_int_double.cu
+    src/raft_runtime/solver/lobpcg_solver_int_float.cu
     src/raft_runtime/solver/randomized_svds_float.cu
     src/raft_runtime/solver/randomized_svds_double.cu
   )
